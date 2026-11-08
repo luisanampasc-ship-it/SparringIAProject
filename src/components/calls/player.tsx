@@ -86,7 +86,7 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; dura
           onEnded={() => setPlaying(false)}
         />
       )}
-      <button onClick={toggle} className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-white" aria-label={playing ? "Pausar" : "Reproducir"}>
+      <button onClick={toggle} className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-on-primary" aria-label={playing ? "Pausar" : "Reproducir"}>
         {playing ? <Pause className="size-4" /> : <Play className="ml-0.5 size-4" />}
       </button>
       <span className="w-10 text-xs text-muted tabular-nums">{fmt(time)}</span>

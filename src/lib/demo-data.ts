@@ -110,8 +110,18 @@ function buildTranscript(r: () => number, prospect: string, repName: string, obj
   });
   lines.push(["rep", "¿Cómo lo ves? ¿Te gustaría empezar?"]);
   lines.push(["prospect", r() > 0.5 ? "Me gusta, pero quiero darle una vuelta." : "Sí, vamos a hacerlo."]);
+  // Muletillas: cada comercial tiene su propio "estilo" para que el análisis de oratoria muestre diferencias.
+  const f = rng(repName.length * 7919 + Math.floor(r() * 1000));
+  const fillerRate = repName.startsWith("Ó") ? 0.55 : 0.3;
+  const withFillers = lines.map(([speaker, text]): [TranscriptLine["speaker"], string] => {
+    if (speaker !== "rep" || f() > fillerRate) return [speaker, text];
+    const start = pick(f, ["Eh, ", "Bueno, ", "O sea, ", "Pues ", "Mira, ", "A ver, "]);
+    const end = f() > 0.5 ? pick(f, [", ¿vale?", ", ¿sabes?", ", básicamente.", ", la verdad."]) : "";
+    const body = end ? text.replace(/[.?!]$/, "") : text;
+    return [speaker, `${start}${body.charAt(0).toLowerCase()}${body.slice(1)}${end}`];
+  });
   let t = 0;
-  return lines.map(([speaker, text]) => {
+  return withFillers.map(([speaker, text]) => {
     const line = { t, speaker, text };
     t += 8 + Math.floor(r() * 40);
     return line;

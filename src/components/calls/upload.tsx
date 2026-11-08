@@ -82,7 +82,7 @@ export function UploadPanel({ onCreated }: { onCreated: (id: string) => void }) 
           <p className="flex items-center gap-2 text-sm font-semibold text-text">
             <Mic className="size-4 text-primary" /> Sube el audio · <span className="text-primary-text">Análisis completo con análisis de tono</span>
           </p>
-          <Badge className="bg-primary text-white">RECOMENDADO</Badge>
+          <Badge className="bg-primary text-on-primary">RECOMENDADO</Badge>
         </div>
         <p className="mt-1 text-xs text-muted">Escuchamos el audio y medimos pausas, energía, cercanía y control del tono. Es el análisis más preciso.</p>
         <div className="mt-3">

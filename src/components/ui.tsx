@@ -43,7 +43,7 @@ export function Button({ variant = "secondary", size = "md", className, ...rest 
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" ? "h-8 px-3 text-xs" : "h-9 px-4 text-sm",
-        variant === "primary" && "bg-primary text-white shadow-sm hover:brightness-110",
+        variant === "primary" && "bg-primary text-on-primary shadow-sm hover:brightness-110",
         variant === "secondary" && "border border-border bg-surface text-text hover:bg-surface-2",
         variant === "ghost" && "text-muted hover:bg-surface-2 hover:text-text",
         variant === "danger" && "bg-bad text-white hover:brightness-110",
@@ -82,7 +82,7 @@ export function Pills<T extends string>({ options, value, onChange }: { options:
           onClick={() => onChange(o.value)}
           className={cn(
             "rounded-md px-3 py-1 text-xs font-medium transition",
-            value === o.value ? "bg-primary text-white" : "text-muted hover:bg-surface-2 hover:text-text",
+            value === o.value ? "bg-primary text-on-primary" : "text-muted hover:bg-surface-2 hover:text-text",
           )}
         >
           {o.label}
@@ -258,7 +258,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
     .map((x) => x[0])
     .slice(0, 2)
     .join("");
-  return <span className={cn("grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-white", className)}>{initials}</span>;
+  return <span className={cn("grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-on-primary", className)}>{initials}</span>;
 }
 
 export function Empty({ icon, title, text }: { icon: React.ReactNode; title: string; text?: string }) {

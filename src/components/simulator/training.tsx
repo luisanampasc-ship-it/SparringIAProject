@@ -1,11 +1,13 @@
 "use client";
 
-import { Check, Clock, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
+import { Check, Clock, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-state";
-import { Avatar, Badge, Button, Modal } from "@/components/ui";
+import { PersonaAvatar } from "@/components/persona-face";
+import { Badge, Button, Modal } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
+import { minutesUsedThisMonth } from "@/lib/insights";
 import { simulateAnalyzedSession } from "@/lib/demo-data";
 import type { CallType, Persona } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -62,7 +64,7 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
       }
     >
       <div className="flex gap-3 rounded-xl border border-border p-3">
-        <Avatar name={persona.name} />
+        <PersonaAvatar persona={persona} className="size-12" />
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text">
             {persona.role} · {persona.company}
@@ -129,18 +131,53 @@ const PROSPECT_LINES = [
   "Vale, mándame algo y lo vemos.",
 ];
 
+/** Detección de turnos (modo demo). En producción la hace OpenAI Realtime con `turn_detection: { type: "server_vad" }`. */
+const VOICE_THRESHOLD = 0.12; // nivel de micrófono a partir del cual consideramos que el comercial habla
+const END_OF_TURN_MS = 1300; // silencio necesario para dar por terminado el turno del comercial
+const MIN_SPEECH_MS = 500; // el comercial debe hablar al menos esto para que cuente como turno
+const BARGE_IN_THRESHOLD = 0.28; // mientras habla el prospecto exigimos más volumen (evita que su propia voz por el altavoz cuente como interrupción)
+const BARGE_IN_MS = 400; // y que la interrupción dure un mínimo
+
+type Turn = "prospect" | "rep" | "thinking";
+
 /** Pantalla de pre-llamada + llamada en vivo (modo demo). */
 export function CallScreen({ persona, config, onExit }: { persona: Persona; config: { difficulty: Difficulty; callType: CallType }; onExit: () => void }) {
-  const { spendCredits, addSession, rubrics, pushNotification, toast } = useApp();
+  const { spendCredits, addSession, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
   const router = useRouter();
   const [phase, setPhase] = useState<"ready" | "live" | "ending">("ready");
   const [seconds, setSeconds] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [speaking, setSpeaking] = useState<"prospect" | "rep" | null>(null);
+  const [turn, setTurn] = useState<Turn>("prospect");
+  const [repTalking, setRepTalking] = useState(false);
   const [lines, setLines] = useState<{ who: "prospect" | "rep"; text: string }[]>([]);
   const [level, setLevel] = useState(0);
+  const [micOk, setMicOk] = useState(true);
   const stream = useRef<MediaStream | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const vad = useRef({ speechStart: 0, lastVoice: 0, heard: false });
+  const turnRef = useRef<Turn>("prospect");
+  const nextLine = useRef(0);
+  const mutedRef = useRef(false);
+  const transcriptEnd = useRef<HTMLDivElement>(null);
   const diffLabel = { facil: "fácil", medio: "medio", dificil: "difícil" }[config.difficulty];
+
+  const limit = minuteLimits[CURRENT_USER.id] ?? 0;
+  const used = minutesUsedThisMonth(sessions, CURRENT_USER.id);
+  const remainingMin = Math.max(0, limit - used);
+  const remainingSec = remainingMin * 60 - seconds;
+
+  const setTurnBoth = (t: Turn) => {
+    turnRef.current = t;
+    setTurn(t);
+  };
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    transcriptEnd.current?.scrollIntoView({ block: "nearest" });
+  }, [lines]);
 
   useEffect(() => {
     if (phase !== "live") return;
@@ -153,47 +190,123 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     if (phase === "live" && seconds > 0 && seconds % 60 === 0) spendCredits(1);
   }, [seconds, phase, spendCredits]);
 
-  // Demo: el prospecto "habla" cada pocos segundos. En producción aquí va la sesión WebRTC con OpenAI Realtime.
+  // Límite de minutos del colaborador: avisa al final y cuelga al llegar a cero.
   useEffect(() => {
     if (phase !== "live") return;
-    const idx = Math.floor(seconds / 7);
-    if (seconds % 7 === 1 && idx < PROSPECT_LINES.length) {
-      setSpeaking("prospect");
-      setLines((l) => [...l, { who: "prospect", text: PROSPECT_LINES[idx] }]);
-      try {
-        const u = new SpeechSynthesisUtterance(PROSPECT_LINES[idx]);
-        u.lang = "es-ES";
-        speechSynthesis.speak(u);
-      } catch {
-        /* sin síntesis de voz */
-      }
+    if (remainingSec === 60) toast("Te queda 1 minuto de tu límite mensual de simulador");
+    if (remainingSec <= 0) {
+      toast("Has alcanzado tu límite mensual de minutos. La llamada se ha cerrado.");
+      hangUp();
     }
-    if (seconds % 7 === 4) setSpeaking("rep");
-  }, [seconds, phase]);
+  }, [remainingSec, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** El prospecto habla. Solo se llama cuando el comercial ha terminado su turno. */
+  function prospectSpeaks() {
+    // Si el comercial ha retomado la palabra mientras el prospecto "pensaba", no le pisamos: seguimos escuchando.
+    if (performance.now() - vad.current.lastVoice < 400) {
+      setTurnBoth("rep");
+      return;
+    }
+    const idx = nextLine.current;
+    if (idx >= PROSPECT_LINES.length) {
+      setTurnBoth("rep");
+      return;
+    }
+    nextLine.current = idx + 1;
+    const text = PROSPECT_LINES[idx];
+    setTurnBoth("prospect");
+    setLines((l) => [...l, { who: "prospect", text }]);
+    const done = () => {
+      if (turnRef.current === "prospect") setTurnBoth("rep");
+    };
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "es-ES";
+      u.onend = done;
+      u.onerror = done;
+      speechSynthesis.speak(u);
+      // Por si el navegador no emite onend.
+      setTimeout(done, 1200 + text.length * 70);
+    } catch {
+      setTimeout(done, 1200 + text.length * 60);
+    }
+  }
+
+  /** El comercial cede el turno: marcamos su intervención y el prospecto "piensa" antes de responder. */
+  function endRepTurn() {
+    if (turnRef.current !== "rep") return;
+    const spoken = vad.current.heard ? Math.max(1, Math.round((vad.current.lastVoice - vad.current.speechStart) / 1000)) : 0;
+    vad.current.heard = false;
+    setLines((l) => [...l, { who: "rep", text: spoken ? `(intervención de ${spoken} s)` : "(turno cedido)" }]);
+    setTurnBoth("thinking");
+    setTimeout(prospectSpeaks, 600 + Math.random() * 500);
+  }
+
+  // Bucle de detección de voz: decide cuándo ha terminado de hablar el comercial y gestiona las interrupciones.
+  useEffect(() => {
+    if (phase !== "live") return;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      const v = vad.current;
+      const talking = now - v.lastVoice < 250;
+      setRepTalking(talking);
+      // Interrupción: si el comercial habla mientras el prospecto habla, el prospecto se calla y escucha.
+      if (talking && turnRef.current === "prospect" && v.lastVoice - v.speechStart > BARGE_IN_MS) {
+        try {
+          speechSynthesis.cancel();
+        } catch {
+          /* noop */
+        }
+        setLines((l) => (l.length && l[l.length - 1].who === "prospect" ? [...l.slice(0, -1), { ...l[l.length - 1], text: `${l[l.length - 1].text} [interrumpido]` }] : l));
+        setTurnBoth("rep");
+      }
+      // Fin de turno: ha hablado lo suficiente y lleva un rato en silencio.
+      if (turnRef.current === "rep" && v.heard && now - v.lastVoice > END_OF_TURN_MS && v.lastVoice - v.speechStart > MIN_SPEECH_MS) {
+        endRepTurn();
+      }
+    }, 150);
+    return () => clearInterval(tick);
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function start() {
+    if (remainingMin <= 0) {
+      toast("Has alcanzado tu límite mensual de minutos de simulador");
+      return;
+    }
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       const ctx = new AudioContext();
+      audioCtx.current = ctx;
       const analyser = ctx.createAnalyser();
       ctx.createMediaStreamSource(stream.current).connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
       const loop = () => {
         if (!stream.current) return;
         analyser.getByteFrequencyData(data);
-        setLevel(data.reduce((a, b) => a + b, 0) / data.length / 128);
+        const lv = mutedRef.current ? 0 : data.reduce((a, b) => a + b, 0) / data.length / 128;
+        setLevel(lv);
+        if (lv > (turnRef.current === "prospect" ? BARGE_IN_THRESHOLD : VOICE_THRESHOLD)) {
+          const now = performance.now();
+          if (!vad.current.heard || now - vad.current.lastVoice > END_OF_TURN_MS) vad.current.speechStart = now;
+          vad.current.heard = true;
+          vad.current.lastVoice = now;
+        }
         requestAnimationFrame(loop);
       };
       loop();
     } catch {
-      toast("No se pudo acceder al micrófono: la sesión seguirá en modo demo");
+      setMicOk(false);
+      toast("No se pudo acceder al micrófono: usa el botón «He terminado» para ceder el turno");
     }
     setPhase("live");
+    // El prospecto descuelga y saluda; a partir de aquí siempre espera a que el comercial termine.
+    setTimeout(prospectSpeaks, 900);
   }
 
   function hangUp() {
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
+    audioCtx.current?.close().catch(() => undefined);
     try {
       speechSynthesis.cancel();
     } catch {
@@ -211,13 +324,14 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   }
 
   const mm = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const status = turn === "prospect" ? "Hablando…" : turn === "thinking" ? "Pensando su respuesta…" : repTalking ? "Te está escuchando…" : "Tu turno: habla cuando quieras";
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
       {phase === "ready" && (
         <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 text-center shadow-2xl">
-          <div className="flex items-center gap-3 rounded-xl border border-border p-3 text-left">
-            <Avatar name={persona.name} className="size-10" />
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 p-3 text-left">
+            <PersonaAvatar persona={persona} className="size-14" />
             <div>
               <p className="text-sm font-semibold text-text">{persona.name}</p>
               <p className="text-[11px] text-muted">
@@ -226,10 +340,13 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             </div>
           </div>
           <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary-text">
-            <Mic className="size-3" /> Sesión de voz · {diffLabel}
+            <Mic className="size-3" /> Sesión de voz · <b>{diffLabel}</b>
           </span>
-          <p className="mt-4 text-sm text-muted">Al pulsar el botón se activará el micrófono y empezará la sesión. Habla con naturalidad.</p>
-          <Button variant="primary" className="mt-5 h-11 w-full text-base shadow-lg shadow-primary/30" onClick={start}>
+          <p className="mt-4 text-sm text-muted">Al pulsar el botón se activará el micrófono y empezará la sesión. Habla con naturalidad: el prospecto esperará a que termines antes de responder.</p>
+          <p className={cn("mt-2 text-xs", remainingMin > 0 ? "text-faint" : "font-semibold text-bad")}>
+            {remainingMin > 0 ? `Te quedan ${remainingMin} min de tu límite mensual` : "Has alcanzado tu límite mensual de minutos"}
+          </p>
+          <Button variant="primary" disabled={remainingMin <= 0} className="mt-5 h-11 w-full rounded-full text-base shadow-lg shadow-primary/30" onClick={start}>
             <Play className="size-4" /> Iniciar entrenamiento
           </Button>
           <button onClick={onExit} className="mt-3 text-xs text-faint hover:text-text">
@@ -240,16 +357,21 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
 
       {phase === "live" && (
         <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl">
-          <p className="text-xs font-medium text-good">● En llamada · {mm}</p>
+          <div className="flex w-full items-center justify-between text-xs">
+            <p className="font-medium text-good">● En llamada · {mm}</p>
+            <p className={cn(remainingSec <= 120 ? "font-semibold text-bad" : "text-faint")}>
+              Límite: {Math.floor(Math.max(0, remainingSec) / 60)}:{String(Math.max(0, remainingSec) % 60).padStart(2, "0")} restantes
+            </p>
+          </div>
           <div className="relative my-8">
-            {speaking === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
-            <Avatar name={persona.name} className="relative size-24 text-2xl" />
+            {turn === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
+            <PersonaAvatar persona={persona} className="relative size-28" />
           </div>
           <p className="font-semibold text-text">{persona.name}</p>
-          <p className="text-xs text-muted">{speaking === "prospect" ? "Hablando…" : "Escuchando"}</p>
-          <div className="mt-4 flex h-6 items-end gap-0.5">
+          <p className="text-xs text-muted">{status}</p>
+          <div className="mt-4 flex h-6 items-end gap-0.5" aria-label="Nivel de tu micrófono">
             {Array.from({ length: 16 }, (_, i) => (
-              <span key={i} className="w-1 rounded-full bg-primary transition-all" style={{ height: `${muted ? 2 : Math.max(2, Math.min(24, level * 24 * (0.5 + Math.abs(Math.sin(i + seconds)))))}px` }} />
+              <span key={i} className={cn("w-1 rounded-full transition-all", repTalking ? "bg-primary" : "bg-faint")} style={{ height: `${muted ? 2 : Math.max(2, Math.min(24, level * 24 * (0.5 + Math.abs(Math.sin(i + seconds)))))}px` }} />
             ))}
           </div>
           <div className="mt-5 h-36 w-full space-y-1.5 overflow-y-auto rounded-lg bg-surface-2 p-3 text-xs">
@@ -258,16 +380,29 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
                 <b>{l.who === "prospect" ? persona.name.split(" ")[0] : "Tú"}:</b> {l.text}
               </p>
             ))}
+            <div ref={transcriptEnd} />
           </div>
-          <div className="mt-6 flex gap-4">
+          <div className="mt-6 flex items-center gap-4">
             <button onClick={() => setMuted((m) => !m)} className={cn("grid size-12 place-items-center rounded-full border border-border", muted ? "bg-bad-soft text-bad" : "text-text")} aria-label="Silenciar">
               {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+            </button>
+            <button
+              onClick={endRepTurn}
+              disabled={turn !== "rep"}
+              className="flex h-12 items-center gap-1.5 rounded-full border border-border px-4 text-xs font-medium text-text hover:bg-surface-2 disabled:opacity-40"
+              title="Úsalo si el prospecto no detecta que has terminado de hablar"
+            >
+              <Hand className="size-4" /> He terminado
             </button>
             <button onClick={hangUp} className="grid size-12 place-items-center rounded-full bg-bad text-white" aria-label="Colgar">
               <PhoneOff className="size-5" />
             </button>
           </div>
-          <p className="mt-4 text-[10px] text-faint">Modo demo: conecta OpenAI Realtime para conversar con el prospecto de verdad (ver README).</p>
+          <p className="mt-4 text-center text-[10px] text-faint">
+            {micOk ? "El prospecto responde cuando haces una pausa de ~1 segundo. Si le interrumpes, se calla y te escucha." : "Sin micrófono: pulsa «He terminado» para que el prospecto responda."}
+            <br />
+            Modo demo: conecta OpenAI Realtime para conversar con el prospecto de verdad (ver README).
+          </p>
         </div>
       )}
 

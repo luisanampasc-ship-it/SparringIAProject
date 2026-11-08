@@ -43,7 +43,7 @@ function MonthGrid({ year, month, from, to, onPick }: { year: number; month: num
                 "mx-auto grid size-7 place-items-center rounded-md text-xs",
                 future ? "text-faint/50" : "text-text hover:bg-surface-2",
                 inRange && "bg-primary-soft text-primary-text",
-                edge && "bg-primary text-white hover:bg-primary",
+                edge && "bg-primary text-on-primary hover:bg-primary",
               )}
             >
               {d.getDate()}
@@ -103,7 +103,7 @@ export function DateRangePicker() {
                   setFrom(r.from);
                   setTo(r.to);
                 }}
-                className={cn("rounded-full px-3 py-1 text-xs font-medium", preset === p ? "bg-primary text-white" : "text-muted hover:bg-surface-2")}
+                className={cn("rounded-full px-3 py-1 text-xs font-medium", preset === p ? "bg-primary text-on-primary" : "text-muted hover:bg-surface-2")}
               >
                 {p}
               </button>

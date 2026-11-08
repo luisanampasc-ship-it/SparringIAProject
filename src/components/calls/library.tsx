@@ -56,8 +56,8 @@ export function Library({ tab, setTab, selectedId, onSelect }: { tab: LibTab; se
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-2 p-4 pb-2">
         <div>
-          <h2 className="font-semibold text-text">Biblioteca de llamadas</h2>
-          <p className="text-[11px] text-faint">Grabaciones, sesiones IA y subidas</p>
+          <h2 className="font-semibold text-text">Centro de Llamadas</h2>
+          <p className="text-[11px] text-faint">Biblioteca de grabaciones, sesiones IA y subidas</p>
         </div>
         <div className="flex gap-1">
           <button
@@ -86,7 +86,7 @@ export function Library({ tab, setTab, selectedId, onSelect }: { tab: LibTab; se
           <button
             key={v}
             onClick={() => setTab(v)}
-            className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap", tab === v ? "bg-primary text-white" : "text-muted hover:bg-surface-2")}
+            className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap", tab === v ? "bg-primary text-on-primary" : "text-muted hover:bg-surface-2")}
           >
             {v === "subir" && <Upload className="size-3" />}
             {l}

@@ -3,24 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3, Gauge, LayoutDashboard, Mic, Phone, Plug, Settings, ClipboardList, Upload, Users, X,
+  GraduationCap, LayoutDashboard, Mic, Phone, Plug, Settings, ClipboardList, Users, X,
 } from "lucide-react";
 import { useApp } from "@/components/app-state";
 import { CURRENT_USER } from "@/lib/catalog";
+import { minutesUsedThisMonth } from "@/lib/insights";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
 const GROUPS = [
+  { label: "Módulo 1 · Entrenamiento", items: [{ href: "/simulador", label: "Simulador IA", icon: Mic }] },
   {
-    label: "Analíticas",
+    label: "Módulo 2 · Resultados",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/metricas", label: "Métricas", icon: BarChart3 },
-      { href: "/llamadas", label: "Llamadas", icon: Phone },
-      { href: "/panel-manager", label: "Panel Manager", icon: Gauge },
+      { href: "/entrenamiento", label: "Centro de Entrenamiento", icon: GraduationCap },
+      { href: "/llamadas", label: "Centro de Llamadas", icon: Phone },
     ],
   },
-  { label: "Entrenamiento", items: [{ href: "/simulador", label: "Simulador IA", icon: Mic }] },
   {
     label: "Gestionar",
     items: [
@@ -36,8 +36,10 @@ export const NAV_ITEMS = GROUPS.flatMap((g) => g.items);
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
-  const { credits } = useApp();
+  const { credits, sessions, minuteLimits } = useApp();
   const total = 300;
+  const myLimit = minuteLimits[CURRENT_USER.id] ?? 0;
+  const myUsed = minutesUsedThisMonth(sessions, CURRENT_USER.id);
 
   return (
     <>
@@ -61,11 +63,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
         <div className="px-3">
           <Link
-            href="/llamadas?tab=subir"
+            href="/simulador"
             onClick={onClose}
-            className="flex h-9 items-center justify-center gap-2 rounded-lg bg-primary text-sm font-medium text-white shadow-lg shadow-primary/30 hover:brightness-110"
+            className="flex h-9 items-center justify-center gap-2 rounded-lg bg-primary text-sm font-medium text-on-primary shadow-lg shadow-primary/30 hover:brightness-110"
           >
-            <Upload className="size-4" /> Subir llamada
+            <Mic className="size-4" /> Simulador IA
           </Link>
         </div>
 
@@ -105,10 +107,16 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             <div className="h-full rounded-full bg-primary" style={{ width: `${(credits / total) * 100}%` }} />
           </div>
           <p className="mt-1.5 text-[11px] text-sidebar-text/60">Se renueva el día 24</p>
+          <div className="mt-2.5 flex justify-between border-t border-white/10 pt-2 text-xs">
+            <span>Tu límite mensual</span>
+            <span className={cn("font-semibold", myUsed >= myLimit ? "text-bad" : "text-white")}>
+              {Math.min(myUsed, myLimit)}/{myLimit} min
+            </span>
+          </div>
         </div>
 
         <Link href="/cuenta" onClick={onClose} className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 hover:bg-white/5">
-          <span className="grid size-7 place-items-center rounded-full bg-primary text-[11px] font-semibold text-white">{CURRENT_USER.initials}</span>
+          <span className="grid size-7 place-items-center rounded-full bg-primary text-[11px] font-semibold text-on-primary">{CURRENT_USER.initials}</span>
           <span className="text-sm font-medium text-white">{CURRENT_USER.name}</span>
         </Link>
       </aside>

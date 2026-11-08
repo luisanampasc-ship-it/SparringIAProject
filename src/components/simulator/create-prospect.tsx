@@ -1,8 +1,9 @@
 "use client";
 
-import { Globe, Loader2, Mic, PencilLine, Sparkles, UploadCloud } from "lucide-react";
+import { Globe, Loader2, Mic, PencilLine, Sparkles, Star, UploadCloud } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "@/components/app-state";
+import { PersonaAvatar } from "@/components/persona-face";
 import { Button, Modal, Popover, Select } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
 import type { Persona } from "@/lib/types";
@@ -37,7 +38,7 @@ function fakeGenerate(seed: string, extra: Partial<Persona> = {}): Persona {
 export function CreateProspectMenu() {
   const [mode, setMode] = useState<Mode>(null);
   const items = [
-    { group: "Crear", id: "ai" as const, icon: Sparkles, title: "Asistente IA", sub: "Genera el prospecto con IA" },
+    { group: "Crear", id: "ai" as const, icon: Star, title: "Asistente IA", sub: "Genera el prospecto con IA" },
     { group: "Crear", id: "manual" as const, icon: PencilLine, title: "Configuración manual", sub: "Paso a paso" },
     { group: "Importar", id: "web" as const, icon: Globe, title: "Desde web", sub: "Clónalo desde una URL" },
     { group: "Importar", id: "audio" as const, icon: Mic, title: "Desde grabación", sub: "Clónalo desde un audio" },
@@ -140,6 +141,13 @@ function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   const [p, setP] = useState<Persona>(blank());
   const set = (k: keyof Persona, v: string) => setP((x) => ({ ...x, [k]: v }));
   const steps = ["Identidad", "Contexto", "Comportamiento"];
+  // En producción la foto se sube a Supabase Storage; aquí se guarda como data URL en memoria.
+  const onPhoto = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setP((x) => ({ ...x, photo: String(reader.result) }));
+    reader.readAsDataURL(file);
+  };
   const valid = [p.name && p.role, p.description.length > 10, true][step];
   return (
     <Modal
@@ -177,6 +185,24 @@ function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       </div>
       {step === 0 && (
         <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <PersonaAvatar persona={{ name: p.name || "Nuevo prospecto", photo: p.photo }} className="size-14" />
+            <div className="text-xs text-muted">
+              <p className="font-medium text-text">Cara del prospecto</p>
+              <p>Se genera una ilustración a partir del nombre. También puedes subir una foto.</p>
+              <div className="mt-1 flex gap-3">
+                <label className="cursor-pointer font-medium text-primary-text hover:underline">
+                  Subir foto
+                  <input type="file" accept="image/*" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
+                </label>
+                {p.photo && (
+                  <button className="text-faint hover:text-text" onClick={() => setP((x) => ({ ...x, photo: undefined }))}>
+                    Quitar foto
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
           <label className="block text-xs text-muted">Nombre<input className={input} value={p.name} onChange={(e) => set("name", e.target.value)} /></label>
           <label className="block text-xs text-muted">Cargo<input className={input} value={p.role} onChange={(e) => set("role", e.target.value)} /></label>
           <label className="block text-xs text-muted">Empresa<input className={input} value={p.company} onChange={(e) => set("company", e.target.value)} /></label>

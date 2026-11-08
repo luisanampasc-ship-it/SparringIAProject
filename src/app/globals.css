@@ -3,49 +3,64 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg: #f7f7fa;
+  --bg: #f7f7f7;
   --surface: #ffffff;
-  --surface-2: #f3f2f8;
-  --border: #e7e5ef;
-  --text: #17141f;
-  --muted: #6e6a7c;
-  --faint: #a19cb0;
-  --primary: #7c3aed;
-  --primary-soft: #f1eafe;
-  --primary-text: #6d28d9;
-  --good: #16a34a;
-  --good-soft: #e9f8ef;
-  --warn: #d97706;
-  --warn-soft: #fdf3e2;
-  --bad: #dc2626;
-  --bad-soft: #fdecec;
-  --sidebar: #120d1f;
-  --sidebar-text: #c9c3da;
-  --sidebar-active: #2a1d4a;
+  --surface-2: #f2f3f4;
+  --border: #e6e8e9;
+  --text: #292d3a;
+  --muted: #606a70;
+  --faint: #7d8a92;
+  --primary: #068667;
+  --on-primary: #ffffff;
+  --primary-soft: #e3fbf3;
+  --primary-text: #006750;
+  --brand: #01a982;
+  --good: #009a71;
+  --good-soft: #d1ffee;
+  --warn: #d36d00;
+  --warn-soft: #fff3dd;
+  --bad: #cc1f1a;
+  --bad-soft: #ffecec;
+  --info: #0069e8;
+  --info-soft: #e3f1ff;
+  --accent: #6751ff;
+  --accent-soft: #ece7ff;
+  --cyan: #00838f;
+  --sidebar: #1d1f27;
+  --sidebar-text: #b1b9be;
+  --sidebar-active: #292d3a;
 }
 
 .dark {
-  --bg: #0d0b13;
-  --surface: #16131f;
-  --surface-2: #1d1929;
-  --border: #2a2538;
-  --text: #f1eff7;
-  --muted: #a39db5;
-  --faint: #6f6982;
-  --primary: #8b5cf6;
-  --primary-soft: #241a3d;
-  --primary-text: #b69bfa;
-  --good: #22c55e;
-  --good-soft: #10261a;
-  --warn: #f59e0b;
-  --warn-soft: #2b2010;
-  --bad: #ef4444;
-  --bad-soft: #2c1414;
-  --sidebar: #0a0811;
-  --sidebar-text: #b5aec8;
-  --sidebar-active: #241a3d;
+  --bg: #1d1f27;
+  --surface: #292d3a;
+  --surface-2: #22252e;
+  --border: #3e4550;
+  --text: #ffffff;
+  --muted: #b1b9be;
+  --faint: #7d8a92;
+  --primary: #05cc93;
+  --on-primary: #292d3a;
+  --primary-soft: #093d32;
+  --primary-text: #05cc93;
+  --brand: #01a982;
+  --good: #17eba0;
+  --good-soft: #093d32;
+  --warn: #ffbc44;
+  --warn-soft: #3c361e;
+  --bad: #ff7b7b;
+  --bad-soft: #552120;
+  --info: #6eb6ff;
+  --info-soft: #1c3053;
+  --accent: #a497ff;
+  --accent-soft: #2e2a55;
+  --cyan: #00a4b3;
+  --sidebar: #16171d;
+  --sidebar-text: #b1b9be;
+  --sidebar-active: #292d3a;
 }
 
+/* Paleta basada en los tokens de color del HPE Design System (hpe-design-tokens). */
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -56,6 +71,13 @@
   --color-faint: var(--faint);
   --color-primary: var(--primary);
   --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--on-primary);
+  --color-brand: var(--brand);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-cyan: var(--cyan);
   --color-primary-text: var(--primary-text);
   --color-good: var(--good);
   --color-good-soft: var(--good-soft);
