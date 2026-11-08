@@ -27,6 +27,8 @@ export interface Persona {
   personality: string;
   objections: string[];
   createdBy: string;
+  /** Foto opcional (data URL). Si no hay, se dibuja una cara ilustrada a partir del nombre. */
+  photo?: string;
 }
 
 export interface TranscriptLine {

@@ -6,13 +6,16 @@ import { Suspense, useMemo, useState } from "react";
 import { useApp } from "@/components/app-state";
 import { CreateProspectMenu } from "@/components/simulator/create-prospect";
 import { CallScreen, TrainingConfigModal, type Difficulty } from "@/components/simulator/training";
-import { Avatar, Badge, Card, Modal, PageHeader, Popover, Select } from "@/components/ui";
-import { Logo } from "@/components/shell/logo";
-import { REPS } from "@/lib/catalog";
+import { PersonaAvatar } from "@/components/persona-face";
+import { Badge, Card, Modal, PageHeader, Popover, ProgressBar, Select } from "@/components/ui";
+import { CURRENT_USER, REPS } from "@/lib/catalog";
+import { minutesUsedThisMonth } from "@/lib/insights";
 import type { CallType, Persona } from "@/lib/types";
 
 function SimuladorInner() {
-  const { personas, removePersona, addPersona, toast } = useApp();
+  const { personas, removePersona, addPersona, toast, sessions, minuteLimits } = useApp();
+  const limit = minuteLimits[CURRENT_USER.id] ?? 0;
+  const used = minutesUsedThisMonth(sessions, CURRENT_USER.id);
   const params = useSearchParams();
   const [q, setQ] = useState("");
   const [owner, setOwner] = useState("all");
@@ -45,6 +48,16 @@ function SimuladorInner() {
         }
         right={<CreateProspectMenu />}
       />
+
+      <Card className="mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted">
+            Tus minutos de simulador este mes: <b className="text-text">{used}</b> de <b className="text-text">{limit} min</b>
+            {used >= limit && <span className="ml-2 font-semibold text-bad">· Límite alcanzado: pide a tu manager que lo amplíe en Equipo</span>}
+          </p>
+          <ProgressBar value={used} max={Math.max(1, limit)} tone={used >= limit ? "bad" : used / Math.max(1, limit) > 0.8 ? "warn" : "primary"} className="mt-1.5" />
+        </div>
+      </Card>
 
       {focus && (
         <div className="mb-4 rounded-lg border border-primary/30 bg-primary-soft/50 px-4 py-2 text-sm text-text">
@@ -93,10 +106,9 @@ function SimuladorInner() {
                   )}
                 </Popover>
               </div>
-              <Logo className="size-9 opacity-80" />
-              <Avatar name={p.name} className="absolute -bottom-4 left-4 ring-4 ring-surface" />
+              <PersonaAvatar persona={p} ring className="absolute -bottom-7 left-4 size-16" />
             </div>
-            <div className="p-4 pt-6">
+            <div className="p-4 pt-9">
               <p className="font-semibold text-text">{p.name}</p>
               <Badge className="mt-1 bg-primary-soft text-primary-text">{p.role}</Badge>
               <p className="mt-2 line-clamp-2 text-xs text-muted">{p.description}</p>
@@ -127,7 +139,8 @@ function SimuladorInner() {
           <li>Configura la dificultad y el tipo de llamada que quieres practicar.</li>
           <li>Pulsa &ldquo;Iniciar entrenamiento&rdquo;, permite el micrófono y habla como en una llamada real.</li>
           <li>Al colgar, la IA analiza la sesión con los mismos criterios que tus llamadas reales.</li>
-          <li>Cada minuto de práctica consume un minuto de créditos.</li>
+          <li>Cuando termines de hablar, haz una breve pausa: el prospecto espera a que acabes antes de responder. Si le interrumpes, se calla y te escucha.</li>
+          <li>Cada minuto de práctica consume un minuto de créditos y cuenta para tu límite mensual de minutos.</li>
         </ol>
       </Modal>
     </div>

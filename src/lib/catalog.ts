@@ -11,18 +11,18 @@ export const callTypeLabel = (c: CallType) => CALL_TYPES.find((x) => x.id === c)
 export const callTypeColor: Record<CallType, string> = {
   cold_call: "text-bad",
   cualificacion: "text-primary-text",
-  videollamada: "text-good",
+  videollamada: "text-info",
 };
 
 export const callTypeDot: Record<CallType, string> = {
   cold_call: "bg-faint",
   cualificacion: "bg-primary",
-  videollamada: "bg-good",
+  videollamada: "bg-info",
 };
 
 export const OUTCOMES = [
   { id: "ganada", label: "Ganada", dot: "bg-good", badge: "bg-good-soft text-good" },
-  { id: "en_avance", label: "En avance", dot: "bg-primary", badge: "bg-primary-soft text-primary-text" },
+  { id: "en_avance", label: "En avance", dot: "bg-info", badge: "bg-info-soft text-info" },
   { id: "perdida", label: "Perdida", dot: "bg-bad", badge: "bg-bad-soft text-bad" },
   { id: "seguimiento", label: "Seguimiento", dot: "bg-warn", badge: "bg-warn-soft text-warn" },
 ] as const;
@@ -33,6 +33,9 @@ export const REPS: Rep[] = [
 ];
 
 export const CURRENT_USER = REPS[0];
+
+/** Minutos de simulador al mes que puede usar cada colaborador (editable en Equipo). */
+export const DEFAULT_MINUTE_LIMITS: Record<string, number> = { r1: 300, r2: 180 };
 
 export const OBJECTION_CATEGORIES = [
   "Dinero / Capacidad de inversión",
@@ -93,10 +96,10 @@ export const DEFAULT_RUBRICS: Rubrics = {
 };
 
 export const RUBRIC_COLORS: Record<string, string> = {
-  apertura: "#8b5cf6",
-  diagnostico: "#22c55e",
-  objeciones: "#ef4444",
-  cierre: "#f59e0b",
+  apertura: "var(--accent)",
+  diagnostico: "var(--brand)",
+  objeciones: "var(--info)",
+  cierre: "var(--warn)",
 };
 
 export const PERSONAS: Persona[] = [

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { DEFAULT_RUBRICS, PERSONAS } from "@/lib/catalog";
+import { DEFAULT_MINUTE_LIMITS, DEFAULT_RUBRICS, PERSONAS } from "@/lib/catalog";
 import { generateDemoData, recomputeScore } from "@/lib/demo-data";
 import type { AppNotification, Outcome, Persona, Rubrics, Session } from "@/lib/types";
 
@@ -27,6 +27,9 @@ interface AppState {
   range: DateRange;
   toasts: Toast[];
   notes: Record<string, string>;
+  /** Límite mensual de minutos de simulador por colaborador (id → minutos). */
+  minuteLimits: Record<string, number>;
+  setMinuteLimit: (repId: string, minutes: number) => void;
   setRange: (r: DateRange) => void;
   setOutcome: (id: string, outcome: Outcome) => void;
   updateSession: (id: string, patch: Partial<Session>) => void;
@@ -84,6 +87,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [range, setRange] = useState<DateRange>(() => presetRange("1M", new Date(0)));
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [minuteLimits, setMinuteLimits] = useState<Record<string, number>>(DEFAULT_MINUTE_LIMITS);
 
   // Los datos demo se generan en el cliente (relativos a hoy) para evitar desajustes de hidratación.
   useEffect(() => {
@@ -94,6 +98,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setSessions(data.sessions);
     setNotifications(data.notifications);
     setNotes(loadLocal("sparring.notes", {}));
+    setMinuteLimits(loadLocal("sparring.minuteLimits", DEFAULT_MINUTE_LIMITS));
     setRange(presetRange("1M", now));
     setReady(true);
   }, []);
@@ -110,8 +115,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes,
+      ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits,
       setRange,
+      // En producción el límite se guarda en la tabla `members` y se valida también en /api/realtime-token.
+      setMinuteLimit: (repId, minutes) =>
+        setMinuteLimits((prev) => {
+          const next = { ...prev, [repId]: Math.max(0, Math.round(minutes)) };
+          saveLocal("sparring.minuteLimits", next);
+          return next;
+        }),
       setOutcome: (id, outcome) => updateSession(id, { outcome, outcomeSource: "manual" }),
       updateSession,
       addSession: (s) => setSessions((ss) => [s, ...ss]),
@@ -136,7 +148,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }),
       toast,
     }),
-    [ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, updateSession, toast],
+    [ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, updateSession, toast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
