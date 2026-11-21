@@ -241,10 +241,48 @@ const WEB_COPY = {
 
 function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boolean; onClose: () => void }) {
   const save = useSave(onClose);
+  const { toast } = useApp();
   const [url, setUrl] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactRole, setContactRole] = useState("");
   const [loading, setLoading] = useState(false);
-  const valid = /^https?:\/\/[^\s.]+\.[^\s]+/.test(url);
+  const [error, setError] = useState("");
+  const normalized = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+  const valid = /^https?:\/\/[^\s.]+\.[^\s]+/.test(normalized);
   const copy = WEB_COPY[kind];
+
+  async function create() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/personas/from-web", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo leer la web.");
+        return;
+      }
+      save({ ...blank(), ...data.persona });
+      const m = data.meta;
+      toast(
+        `Leídas ${m.pagesRead} página(s) de ${m.host}${m.source === "ia" ? " con IA" : ""}` +
+          (kind === "client" && !contactName ? (m.realName ? " · contacto encontrado en su web" : " · no publica su equipo: nombre ficticio") : ""),
+      );
+      setUrl("");
+      setContactName("");
+      setContactRole("");
+    } catch {
+      // Sin conexión con el servidor: perfil aproximado a partir del dominio.
+      save(kind === "client" ? generateFromClientWeb(normalized, blank()) : generateFromOwnWeb(normalized, blank()));
+      toast("No se pudo leer la web: se creó un perfil aproximado a partir del dominio");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -254,20 +292,8 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
-          <Button
-            variant="primary"
-            disabled={!valid || loading}
-            onClick={() => {
-              setLoading(true);
-              // En producción: scraping de la web + LLM en /api/personas/generate.
-              setTimeout(() => {
-                setLoading(false);
-                save(kind === "client" ? generateFromClientWeb(url, blank()) : generateFromOwnWeb(url, blank()));
-                setUrl("");
-              }, 1800);
-            }}
-          >
-            {loading && <Loader2 className="size-4 animate-spin" />} {kind === "client" ? "Crear prospecto" : "Generar cliente ideal"}
+          <Button variant="primary" disabled={!valid || loading} onClick={create}>
+            {loading && <Loader2 className="size-4 animate-spin" />} {loading ? "Leyendo la web…" : kind === "client" ? "Crear prospecto" : "Generar cliente ideal"}
           </Button>
         </>
       }
@@ -276,6 +302,18 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
         <Globe className="size-4 text-faint" />
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={copy.placeholder} className="h-10 flex-1 bg-transparent text-sm text-text outline-none" />
       </div>
+      <p className="mt-2 text-[11px] text-faint">Leemos la portada y páginas como «Nosotros» o «Servicios» para identificar el rubro, qué vende y a quién.</p>
+      {kind === "client" && (
+        <div className="mt-4 rounded-lg border border-border p-3">
+          <p className="text-xs font-medium text-text">Contacto (opcional)</p>
+          <p className="mt-0.5 text-[11px] text-muted">Si sabes con quién hablarás (por ejemplo, por su LinkedIn), escríbelo. Si no, buscamos al equipo directivo en su web y, si no aparece, usamos un nombre ficticio.</p>
+          <div className="mt-2 flex gap-2">
+            <input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Nombre y apellido" className={input} />
+            <input value={contactRole} onChange={(e) => setContactRole(e.target.value)} placeholder="Cargo" className={input} />
+          </div>
+        </div>
+      )}
+      {error && <p className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-xs text-bad">{error}</p>}
     </Modal>
   );
 }

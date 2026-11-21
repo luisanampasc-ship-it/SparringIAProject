@@ -48,7 +48,7 @@ const SECTORS: [RegExp, string][] = [
   [/\b(tienda|retail|comercio|e-?commerce)\b/i, "Comercio"],
 ];
 
-function detectSector(text: string) {
+export function detectSector(text: string) {
   return SECTORS.find(([re]) => re.test(text))?.[1];
 }
 
