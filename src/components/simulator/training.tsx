@@ -198,7 +198,9 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const { spendCredits, addSession, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
   const router = useRouter();
   const [phase, setPhase] = useState<"ready" | "live" | "ending">("ready");
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState(0); // duración total de la llamada
+  const [billable, setBillable] = useState(0); // segundos que cuentan para créditos y límite
+  const billableMs = useRef(0);
   const [muted, setMuted] = useState(false);
   const [turn, setTurn] = useState<Turn>("prospect");
   const [repTalking, setRepTalking] = useState(false);
@@ -227,7 +229,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const limit = minuteLimits[CURRENT_USER.id] ?? 0;
   const used = minutesUsedThisMonth(sessions, CURRENT_USER.id);
   const remainingMin = Math.max(0, limit - used);
-  const remainingSec = remainingMin * 60 - seconds;
+  const remainingSec = remainingMin * 60 - billable;
 
   const setTurnBoth = (t: Turn) => {
     turnRef.current = t;
@@ -248,10 +250,24 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     return () => clearInterval(t);
   }, [phase]);
 
-  // Cada minuto consume un crédito.
+  // Minutos facturables: solo cuenta la conversación. El tiempo en que la IA prepara su
+  // respuesta (turno "thinking", incluida la conexión inicial) no se descuenta.
   useEffect(() => {
-    if (phase === "live" && seconds > 0 && seconds % 60 === 0) spendCredits(1);
-  }, [seconds, phase, spendCredits]);
+    if (phase !== "live") return;
+    let last = performance.now();
+    const t = setInterval(() => {
+      const now = performance.now();
+      if (turnRef.current !== "thinking") billableMs.current += now - last;
+      last = now;
+      setBillable(Math.floor(billableMs.current / 1000));
+    }, 250);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  // Cada minuto de conversación consume un crédito.
+  useEffect(() => {
+    if (phase === "live" && billable > 0 && billable % 60 === 0) spendCredits(1);
+  }, [billable, phase, spendCredits]);
 
   // Límite de minutos del colaborador: avisa al final y cuelga al llegar a cero.
   useEffect(() => {
@@ -453,6 +469,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     callStart.current = performance.now();
     setPhase("live");
     // El prospecto descuelga y saluda; a partir de aquí siempre espera a que el comercial termine.
+    // Mientras conecta, el turno es "thinking" y no cuenta como minutos.
+    setTurnBoth("thinking");
     setTimeout(prospectSpeaks, 900);
   }
 
@@ -470,7 +488,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       /* noop */
     }
     setPhase("ending");
-    const minutes = Math.max(1, Math.ceil(seconds / 60));
+    // La sesión registra los minutos de conversación (sin las esperas de la IA).
+    const minutes = Math.max(1, Math.ceil(Math.floor(billableMs.current / 1000) / 60));
     const id = `rp${Date.now()}`;
     const transcript = [...captured.current];
     const transcribed = transcript.some((l) => l.speaker === "rep" && !l.text.startsWith("("));
@@ -535,7 +554,12 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       {phase === "live" && (
         <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl">
           <div className="flex w-full items-center justify-between text-xs">
-            <p className="font-medium text-good">● En llamada · {mm}</p>
+            <p className="font-medium text-good">
+              ● En llamada · {mm}
+              <span className="block text-[10px] font-normal text-faint" title="No cuenta el tiempo que la IA tarda en responder">
+                Minutos contados: {Math.floor(billable / 60)}:{String(billable % 60).padStart(2, "0")}
+              </span>
+            </p>
             <p className={cn(remainingSec <= 120 ? "font-semibold text-bad" : "text-faint")}>
               Límite: {Math.floor(Math.max(0, remainingSec) / 60)}:{String(Math.max(0, remainingSec) % 60).padStart(2, "0")} restantes
             </p>

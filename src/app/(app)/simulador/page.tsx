@@ -144,7 +144,7 @@ function SimuladorInner() {
           <li>Pulsa &ldquo;Iniciar entrenamiento&rdquo;, permite el micrófono y habla como en una llamada real.</li>
           <li>Al colgar, la IA analiza la sesión con los mismos criterios que tus llamadas reales.</li>
           <li>Cuando termines de hablar, haz una breve pausa: el prospecto espera a que acabes antes de responder. Si le interrumpes, se calla y te escucha.</li>
-          <li>Cada minuto de práctica consume un minuto de créditos y cuenta para tu límite mensual de minutos.</li>
+          <li>Cada minuto de conversación consume un minuto de créditos y cuenta para tu límite mensual. El tiempo que el prospecto tarda en responder no se cuenta.</li>
         </ol>
       </Modal>
     </div>
