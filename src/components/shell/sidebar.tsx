@@ -67,7 +67,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             onClick={onClose}
             className="flex h-9 items-center justify-center gap-2 rounded-lg bg-primary text-sm font-medium text-on-primary shadow-lg shadow-primary/30 hover:brightness-110"
           >
-            <Mic className="size-4" /> Simulador IA
+            <Mic className="size-4" /> Iniciar simulación
           </Link>
         </div>
 

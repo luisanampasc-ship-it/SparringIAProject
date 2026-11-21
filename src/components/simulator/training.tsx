@@ -9,7 +9,7 @@ import { Badge, Button, Modal } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
 import { simulateAnalyzedSession } from "@/lib/demo-data";
-import type { CallType, Persona } from "@/lib/types";
+import type { CallType, Persona, TranscriptLine } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type Difficulty = "facil" | "medio" | "dificil";
@@ -140,6 +140,53 @@ const BARGE_IN_MS = 400; // y que la interrupción dure un mínimo
 
 type Turn = "prospect" | "rep" | "thinking";
 
+/*
+ * Voz del prospecto según su género. En modo demo usamos las voces del navegador;
+ * en producción se sustituye por ElevenLabs (una voz por prospecto) o por la voz de OpenAI Realtime.
+ */
+const FEMALE_VOICES = /(m[oó]nica|paulina|helena|laura|luc[ií]a|elvira|sabina|dalia|paloma|marisol|conchita|esperanza|isabela|female|mujer|femenin)/i;
+const MALE_VOICES = /(jorge|diego|pablo|juan|[aá]lvaro|ra[uú]l|enrique|carlos|miguel|andr[eé]s|alonso|male|hombre|masculin)/i;
+
+function pickVoice(gender: Persona["gender"]) {
+  try {
+    const es = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("es"));
+    const re = gender === "masculino" ? MALE_VOICES : FEMALE_VOICES;
+    const other = gender === "masculino" ? FEMALE_VOICES : MALE_VOICES;
+    const voice = es.find((v) => re.test(v.name)) ?? es.find((v) => !other.test(v.name)) ?? es[0] ?? null;
+    // Si la voz elegida no es claramente del género buscado, ajustamos el tono para acercarla.
+    const pitch = voice && re.test(voice.name) ? 1 : gender === "masculino" ? 0.7 : 1.25;
+    return { voice, pitch, label: voice ? `${voice.name}${pitch !== 1 ? " (tono ajustado)" : ""}` : `Voz del navegador (${gender === "masculino" ? "grave" : "aguda"})` };
+  } catch {
+    return { voice: null, pitch: 1, label: "Voz del navegador" };
+  }
+}
+
+/** Tono de una intervención a partir del volumen medio y las pausas medidas por el micrófono. */
+function toneLabel(avgLevel: number, pauses: number, seconds: number) {
+  if (seconds > 3 && pauses >= 3) return "Dubitativo";
+  if (avgLevel >= 0.38) return "Enérgico";
+  if (avgLevel < 0.2) return "Bajo / poco seguro";
+  return "Seguro y tranquilo";
+}
+
+// Reconocimiento de voz del navegador (Chrome/Edge). En producción: transcripción del audio con diarización.
+type Recognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+function createRecognition(): Recognition | null {
+  const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  return Ctor ? new Ctor() : null;
+}
+
 /** Pantalla de pre-llamada + llamada en vivo (modo demo). */
 export function CallScreen({ persona, config, onExit }: { persona: Persona; config: { difficulty: Difficulty; callType: CallType }; onExit: () => void }) {
   const { spendCredits, addSession, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
@@ -149,10 +196,20 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const [muted, setMuted] = useState(false);
   const [turn, setTurn] = useState<Turn>("prospect");
   const [repTalking, setRepTalking] = useState(false);
-  const [lines, setLines] = useState<{ who: "prospect" | "rep"; text: string }[]>([]);
+  const [lines, setLines] = useState<{ who: "prospect" | "rep"; text: string; tone?: string }[]>([]);
   const [level, setLevel] = useState(0);
   const [micOk, setMicOk] = useState(true);
+  const [interim, setInterim] = useState("");
   const stream = useRef<MediaStream | null>(null);
+  const recognition = useRef<Recognition | null>(null);
+  const live = useRef(false);
+  const callStart = useRef(0);
+  const repText = useRef(""); // texto reconocido del turno actual del comercial
+  const captured = useRef<TranscriptLine[]>([]);
+  const pendingRep = useRef<{ t: number; seconds: number; tone: string } | null>(null);
+  const turnStats = useRef({ sum: 0, frames: 0, pauses: 0, silentSince: 0 });
+  const totals = useRef({ voiceMs: 0, levelSum: 0, levelFrames: 0, longPauses: 0 });
+  const voice = useRef(pickVoice(persona.gender));
   const audioCtx = useRef<AudioContext | null>(null);
   const vad = useRef({ speechStart: 0, lastVoice: 0, heard: false });
   const turnRef = useRef<Turn>("prospect");
@@ -207,6 +264,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       setTurnBoth("rep");
       return;
     }
+    flushRepTurn();
     const idx = nextLine.current;
     if (idx >= PROSPECT_LINES.length) {
       setTurnBoth("rep");
@@ -216,12 +274,15 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     const text = PROSPECT_LINES[idx];
     setTurnBoth("prospect");
     setLines((l) => [...l, { who: "prospect", text }]);
+    captured.current.push({ t: elapsed(), speaker: "prospect", text });
     const done = () => {
       if (turnRef.current === "prospect") setTurnBoth("rep");
     };
     try {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "es-ES";
+      if (voice.current.voice) u.voice = voice.current.voice;
+      u.pitch = voice.current.pitch;
       u.onend = done;
       u.onerror = done;
       speechSynthesis.speak(u);
@@ -237,9 +298,40 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     if (turnRef.current !== "rep") return;
     const spoken = vad.current.heard ? Math.max(1, Math.round((vad.current.lastVoice - vad.current.speechStart) / 1000)) : 0;
     vad.current.heard = false;
-    setLines((l) => [...l, { who: "rep", text: spoken ? `(intervención de ${spoken} s)` : "(turno cedido)" }]);
+    const st = turnStats.current;
+    const avgLevel = st.frames ? st.sum / st.frames : 0;
+    // Acumulamos: si el comercial retoma la palabra antes de que el prospecto responda, sigue siendo el mismo turno.
+    pendingRep.current = {
+      t: pendingRep.current?.t ?? Math.max(0, elapsed() - spoken),
+      seconds: (pendingRep.current?.seconds ?? 0) + spoken,
+      tone: spoken ? toneLabel(avgLevel, st.pauses, spoken) : pendingRep.current?.tone ?? "",
+    };
     setTurnBoth("thinking");
-    setTimeout(prospectSpeaks, 600 + Math.random() * 500);
+    // Pequeña espera: deja que lleguen las últimas palabras reconocidas antes de que el prospecto responda.
+    setTimeout(prospectSpeaks, 700 + Math.random() * 500);
+  }
+
+  /** Escribe en la transcripción lo que dijo el comercial en su turno (texto reconocido + tono medido). */
+  function flushRepTurn() {
+    const p = pendingRep.current;
+    const text = repText.current.trim();
+    if (!p && !text) return;
+    const line: TranscriptLine = {
+      t: p?.t ?? elapsed(),
+      speaker: "rep",
+      text: text || `(intervención de ${p?.seconds ?? 0} s sin transcribir)`,
+      tone: p?.tone || undefined,
+    };
+    captured.current.push(line);
+    setLines((l) => [...l, { who: "rep", text: line.text, tone: line.tone }]);
+    repText.current = "";
+    setInterim("");
+    pendingRep.current = null;
+    turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+  }
+
+  function elapsed() {
+    return callStart.current ? Math.round((performance.now() - callStart.current) / 1000) : 0;
   }
 
   // Bucle de detección de voz: decide cuándo ha terminado de hablar el comercial y gestiona las interrupciones.
@@ -258,6 +350,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           /* noop */
         }
         setLines((l) => (l.length && l[l.length - 1].who === "prospect" ? [...l.slice(0, -1), { ...l[l.length - 1], text: `${l[l.length - 1].text} [interrumpido]` }] : l));
+        const last = captured.current[captured.current.length - 1];
+        if (last?.speaker === "prospect" && !last.text.endsWith("[interrumpido]")) last.text += " [interrumpido]";
         setTurnBoth("rep");
       }
       // Fin de turno: ha hablado lo suficiente y lleva un rato en silencio.
@@ -285,8 +379,24 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         analyser.getByteFrequencyData(data);
         const lv = mutedRef.current ? 0 : data.reduce((a, b) => a + b, 0) / data.length / 128;
         setLevel(lv);
+        const now = performance.now();
+        const st = turnStats.current;
+        if (turnRef.current === "rep" && lv > VOICE_THRESHOLD) {
+          // Estadísticas para el análisis de tono: volumen medio y pausas dentro del turno.
+          st.sum += lv;
+          st.frames += 1;
+          totals.current.levelSum += lv;
+          totals.current.levelFrames += 1;
+          totals.current.voiceMs += 16;
+          if (st.silentSince && now - st.silentSince > 600) {
+            st.pauses += 1;
+            if (now - st.silentSince > 1000) totals.current.longPauses += 1;
+          }
+          st.silentSince = 0;
+        } else if (turnRef.current === "rep" && st.frames && !st.silentSince) {
+          st.silentSince = now;
+        }
         if (lv > (turnRef.current === "prospect" ? BARGE_IN_THRESHOLD : VOICE_THRESHOLD)) {
-          const now = performance.now();
           if (!vad.current.heard || now - vad.current.lastVoice > END_OF_TURN_MS) vad.current.speechStart = now;
           vad.current.heard = true;
           vad.current.lastVoice = now;
@@ -298,12 +408,53 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       setMicOk(false);
       toast("No se pudo acceder al micrófono: usa el botón «He terminado» para ceder el turno");
     }
+    // Transcripción en directo de lo que dice el comercial.
+    const rec = createRecognition();
+    if (rec) {
+      rec.lang = "es-ES";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (e) => {
+        if (mutedRef.current) return;
+        let partial = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) repText.current += `${r[0].transcript.trim()} `;
+          else partial += r[0].transcript;
+        }
+        setInterim(partial);
+      };
+      // Chrome corta el reconocimiento tras unos segundos de silencio: lo reanudamos mientras dure la llamada.
+      rec.onend = () => {
+        if (live.current) {
+          try {
+            rec.start();
+          } catch {
+            /* ya iniciado */
+          }
+        }
+      };
+      rec.onerror = () => undefined;
+      try {
+        rec.start();
+        recognition.current = rec;
+      } catch {
+        recognition.current = null;
+      }
+    }
+    voice.current = pickVoice(persona.gender);
+    live.current = true;
+    callStart.current = performance.now();
     setPhase("live");
     // El prospecto descuelga y saluda; a partir de aquí siempre espera a que el comercial termine.
     setTimeout(prospectSpeaks, 900);
   }
 
   function hangUp() {
+    live.current = false;
+    recognition.current?.stop();
+    recognition.current = null;
+    flushRepTurn();
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
     audioCtx.current?.close().catch(() => undefined);
@@ -315,11 +466,31 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     setPhase("ending");
     const minutes = Math.max(1, Math.ceil(seconds / 60));
     const id = `rp${Date.now()}`;
+    const transcript = [...captured.current];
+    const transcribed = transcript.some((l) => l.speaker === "rep" && !l.text.startsWith("("));
+    const tot = totals.current;
+    const callSec = Math.max(1, seconds);
     setTimeout(() => {
-      const s = simulateAnalyzedSession({ id, type: "roleplay", callType: config.callType, prospectName: persona.name, repId: CURRENT_USER.id, hasAudio: true, durationMin: minutes, personaId: persona.id, rubrics });
+      const base = simulateAnalyzedSession({ id, type: "roleplay", callType: config.callType, prospectName: persona.name, repId: CURRENT_USER.id, hasAudio: true, durationMin: minutes, personaId: persona.id, rubrics });
+      // Lo medido en la llamada sustituye a los valores simulados.
+      const tone = base.analysis?.tone && tot.levelFrames
+        ? {
+            ...base.analysis.tone,
+            talkRatio: Math.min(100, Math.round((tot.voiceMs / 1000 / callSec) * 100)),
+            pauses: tot.longPauses,
+            energy: Math.min(100, Math.round((tot.levelSum / tot.levelFrames) * 180)),
+          }
+        : base.analysis?.tone;
+      const s = {
+        ...base,
+        // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
+        transcript,
+        analysis: base.analysis ? { ...base.analysis, tone } : null,
+        capture: { prospectVoice: voice.current.label, transcribed },
+      };
       addSession(s);
-      pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver el análisis completo.`, sessionId: id });
-      router.push(`/llamadas?id=${id}`);
+      pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });
+      router.push(`/llamadas?id=${id}&vista=transcripcion`);
     }, 2200);
   }
 
@@ -378,8 +549,14 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             {lines.map((l, i) => (
               <p key={i} className={l.who === "prospect" ? "text-text" : "text-primary-text"}>
                 <b>{l.who === "prospect" ? persona.name.split(" ")[0] : "Tú"}:</b> {l.text}
+                {l.tone && <span className="ml-1.5 rounded bg-surface px-1 text-[10px] text-muted">{l.tone}</span>}
               </p>
             ))}
+            {interim && (
+              <p className="text-primary-text/70 italic">
+                <b>Tú:</b> {interim}…
+              </p>
+            )}
             <div ref={transcriptEnd} />
           </div>
           <div className="mt-6 flex items-center gap-4">
@@ -400,6 +577,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           </div>
           <p className="mt-4 text-center text-[10px] text-faint">
             {micOk ? "El prospecto responde cuando haces una pausa de ~1 segundo. Si le interrumpes, se calla y te escucha." : "Sin micrófono: pulsa «He terminado» para que el prospecto responda."}
+            <br />
+            Voz del prospecto: {voice.current.label}. Al colgar verás la transcripción y el tono de tu llamada.
             <br />
             Modo demo: conecta OpenAI Realtime para conversar con el prospecto de verdad (ver README).
           </p>

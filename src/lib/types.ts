@@ -15,9 +15,13 @@ export interface Rep {
   active: boolean;
 }
 
+export type Gender = "masculino" | "femenino";
+
 export interface Persona {
   id: string;
   name: string;
+  /** Determina el nombre sugerido, la cara ilustrada y la voz del prospecto en la llamada. */
+  gender?: Gender;
   role: string;
   company: string;
   sector: string;
@@ -35,6 +39,8 @@ export interface TranscriptLine {
   t: number; // segundos
   speaker: "rep" | "prospect";
   text: string;
+  /** Tono detectado en la intervención (solo en llamadas grabadas en el simulador). */
+  tone?: string;
 }
 
 export interface ScriptBranch {
@@ -116,6 +122,8 @@ export interface Session {
   versions: number;
   hasAudio: boolean;
   audioUrl?: string;
+  /** Datos capturados en directo en una sesión del simulador. */
+  capture?: { prospectVoice: string; transcribed: boolean };
 }
 
 export interface RubricCategory {
