@@ -23,6 +23,8 @@ export interface ScrapedSite {
   siteName: string;
   pages: ScrapedPage[];
   team: { name: string; role: string }[];
+  /** Textos cortos de los menús y enlaces de la portada (suelen nombrar productos y servicios). */
+  navLabels: string[];
 }
 
 export class ScrapeError extends Error {}
@@ -142,6 +144,20 @@ export function findTeam(texts: string[]) {
   return [...found.entries()].map(([name, role]) => ({ name, role })).slice(0, 8);
 }
 
+const GENERIC_LINK = /^(inicio|home|contacto|cont[aá]ctanos|contact|blog|noticias|nosotros|qui[eé]nes somos|about|ayuda|faq|preguntas frecuentes|login|ingresar|iniciar sesi[oó]n|reg[ií]strate|mi cuenta|carrito|buscar|ver m[aá]s|leer m[aá]s|saber m[aá]s|m[aá]s informaci[oó]n|learn more|read more|aqu[ií]|click aqu[ií]|cookies|privacidad|t[eé]rminos.*|pol[ií]tica.*|libro de reclamaciones|trabaja con nosotros|prensa|mapa del sitio|es|en|english|espa[ñn]ol|men[uú]|cerrar|siguiente|anterior|view|view all|ver todo|read .*|skip to .*|ir al contenido.*|saltar .*|news|announcements?|careers|company|events|press|support|sign in|sign up|log in|get started|try .*|download|descargar|comenzar|empezar)$/i;
+
+/** Etiquetas de menú: frases cortas, sin preguntas ni exclamaciones, ordenadas por frecuencia. */
+export function navLabelsFrom(html: string) {
+  const count = new Map<string, number>();
+  for (const m of html.matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const t = clean(m[1]);
+    const words = t.split(" ").length;
+    if (t.length < 3 || t.length > 32 || words > 4 || /[?¿!¡:@©|]|\d{3,}/.test(t) || GENERIC_LINK.test(t)) continue;
+    count.set(t, (count.get(t) ?? 0) + 1);
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 30);
+}
+
 export async function scrapeSite(rawUrl: string): Promise<ScrapedSite> {
   const start = assertPublicUrl(rawUrl);
   let home: { url: URL; html: string };
@@ -161,5 +177,5 @@ export async function scrapeSite(rawUrl: string): Promise<ScrapedSite> {
   const host = home.url.hostname.replace(/^www\./, "");
   const parts = pages[0].title.split(/\s[|–—\\/:-]\s|\s?[|–—\\]\s?/).map((x) => x.trim()).filter((x) => x && !/^(home|inicio|bienvenid[oa]s?|welcome|p[aá]gina principal)$/i.test(x));
   const siteName = meta(home.html, "og:site_name") || parts.sort((a, b) => a.length - b.length)[0] || host;
-  return { host, siteName, pages, team: findTeam(pages.map((p) => p.text)) };
+  return { host, siteName, pages, team: findTeam(pages.map((p) => p.text)), navLabels: navLabelsFrom(home.html) };
 }

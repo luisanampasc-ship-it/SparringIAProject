@@ -8,7 +8,8 @@ import { CURRENT_USER } from "@/lib/catalog";
 const input = "mt-1 h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
 
 export default function CuentaPage() {
-  const { credits, sessions, toast } = useApp();
+  const { credits, sessions, toast, myOffer, setMyOffer } = useApp();
+  const [offer, setOffer] = useState(myOffer);
   const [name, setName] = useState(CURRENT_USER.name);
   const [org, setOrg] = useState("Sparring IA");
   const [lang, setLang] = useState("es");
@@ -46,6 +47,28 @@ export default function CuentaPage() {
               <p className="mt-1 text-[11px] text-faint">Se renuevan el día 24 de cada mes.</p>
             </div>
             <Button onClick={() => toast("Conecta Stripe para habilitar compras (ver README)")}>Comprar más minutos</Button>
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader
+            title="Tu empresa y lo que vendes"
+            subtitle="Lo usamos al crear prospectos desde la web de un cliente: decide con quién hablarás (por ejemplo, RR. HH. o Compras) y qué objeciones pondrá."
+          />
+          <div className="grid gap-3 p-5 md:grid-cols-3">
+            <label className="block text-xs text-muted">
+              Tu empresa
+              <input className={input} value={offer.company} onChange={(e) => setOffer((o) => ({ ...o, company: e.target.value }))} />
+            </label>
+            <label className="block text-xs text-muted md:col-span-2">
+              Qué vendes
+              <input className={input} value={offer.product} onChange={(e) => setOffer((o) => ({ ...o, product: e.target.value }))} placeholder="Ej.: Software de gestión de inventarios para tiendas" />
+            </label>
+            <div>
+              <Button variant="primary" disabled={!offer.product.trim()} onClick={() => { setMyOffer({ company: offer.company.trim(), product: offer.product.trim() }); toast("Guardado: se usará al crear prospectos"); }}>
+                Guardar
+              </Button>
+            </div>
           </div>
         </Card>
 

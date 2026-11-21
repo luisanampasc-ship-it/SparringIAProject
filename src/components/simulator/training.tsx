@@ -4,6 +4,7 @@ import { Check, Clock, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-state";
+import { PersonaDetails } from "@/components/persona-details";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Badge, Button, Modal } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
@@ -63,21 +64,26 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
         </>
       }
     >
-      <div className="flex gap-3 rounded-xl border border-border p-3">
-        <PersonaAvatar persona={persona} className="size-12" />
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text">
-            {persona.role} · {persona.company}
-            <Badge className="bg-primary-soft text-primary-text">{persona.segment}</Badge>
-            <Badge className="bg-primary-soft text-primary-text">{persona.tags.join(", ")}</Badge>
-          </p>
-          <p className={cn("mt-1 text-xs text-muted", !more && "line-clamp-2")}>
-            {persona.description} {more && <span className="block pt-1">Personalidad: {persona.personality}. Objeciones típicas: {persona.objections.join(" · ")}.</span>}
-          </p>
+      <div className="rounded-xl border border-border p-3">
+        <div className="flex gap-3">
+          <PersonaAvatar persona={persona} className="size-12" />
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-text">
+              {persona.role} · {persona.company}
+              <Badge className="bg-primary-soft text-primary-text">{persona.segment}</Badge>
+              {persona.sector && persona.sector !== "Por confirmar" && <Badge className="bg-primary-soft text-primary-text">{persona.sector}</Badge>}
+            </p>
+            {!more && <p className="mt-1 line-clamp-2 text-xs text-muted">{persona.situation ?? persona.description}</p>}
+          </div>
+          <button onClick={() => setMore((m) => !m)} className="h-fit text-xs font-medium whitespace-nowrap text-primary-text">
+            {more ? "Ver menos ↑" : "Ver ficha ↓"}
+          </button>
         </div>
-        <button onClick={() => setMore((m) => !m)} className="h-fit text-xs font-medium whitespace-nowrap text-primary-text">
-          {more ? "Ver menos ↑" : "Ver más ↓"}
-        </button>
+        {more && (
+          <div className="mt-3 border-t border-border pt-3">
+            <PersonaDetails persona={persona} />
+          </div>
+        )}
       </div>
 
       <p className="mt-5 mb-2 text-[10px] font-semibold tracking-wider text-faint uppercase">Nivel de dificultad</p>

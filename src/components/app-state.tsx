@@ -3,7 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DEFAULT_MINUTE_LIMITS, DEFAULT_RUBRICS, PERSONAS } from "@/lib/catalog";
 import { generateDemoData, recomputeScore } from "@/lib/demo-data";
-import type { AppNotification, Outcome, Persona, Rubrics, Session } from "@/lib/types";
+import type { AppNotification, MyOffer, Outcome, Persona, Rubrics, Session } from "@/lib/types";
+
+export const DEFAULT_OFFER: MyOffer = { company: "Mi empresa", product: "Programa de formación en ventas consultivas para equipos comerciales" };
 
 export type RangePreset = "1W" | "1M" | "3M" | "6M" | "YTD" | "custom";
 export interface DateRange {
@@ -30,6 +32,8 @@ interface AppState {
   /** Límite mensual de minutos de simulador por colaborador (id → minutos). */
   minuteLimits: Record<string, number>;
   setMinuteLimit: (repId: string, minutes: number) => void;
+  myOffer: MyOffer;
+  setMyOffer: (o: MyOffer) => void;
   setRange: (r: DateRange) => void;
   setOutcome: (id: string, outcome: Outcome) => void;
   updateSession: (id: string, patch: Partial<Session>) => void;
@@ -88,6 +92,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [minuteLimits, setMinuteLimits] = useState<Record<string, number>>(DEFAULT_MINUTE_LIMITS);
+  const [myOffer, setMyOfferState] = useState<MyOffer>(DEFAULT_OFFER);
 
   // Los datos demo se generan en el cliente (relativos a hoy) para evitar desajustes de hidratación.
   useEffect(() => {
@@ -99,6 +104,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setNotifications(data.notifications);
     setNotes(loadLocal("sparring.notes", {}));
     setMinuteLimits(loadLocal("sparring.minuteLimits", DEFAULT_MINUTE_LIMITS));
+    setMyOfferState(loadLocal("sparring.myOffer", DEFAULT_OFFER));
     setRange(presetRange("1M", now));
     setReady(true);
   }, []);
@@ -115,8 +121,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits,
+      ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer,
       setRange,
+      // En producción se guarda en la tabla `organizations`.
+      setMyOffer: (o) => {
+        setMyOfferState(o);
+        saveLocal("sparring.myOffer", o);
+      },
       // En producción el límite se guarda en la tabla `members` y se valida también en /api/realtime-token.
       setMinuteLimit: (repId, minutes) =>
         setMinuteLimits((prev) => {
@@ -148,7 +159,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }),
       toast,
     }),
-    [ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, updateSession, toast],
+    [ready, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer, updateSession, toast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

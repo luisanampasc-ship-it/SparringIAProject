@@ -111,7 +111,7 @@ function SimuladorInner() {
             <div className="p-4 pt-9">
               <p className="font-semibold text-text">{p.name}</p>
               <Badge className="mt-1 bg-primary-soft text-primary-text">{p.role}</Badge>
-              <p className="mt-2 line-clamp-2 text-xs text-muted">{p.description}</p>
+              <p className="mt-2 line-clamp-2 text-xs text-muted">{p.situation ?? p.description}</p>
               <p className="mt-2 text-[10px] tracking-wide text-faint uppercase">
                 {p.company} · {p.segment}
               </p>

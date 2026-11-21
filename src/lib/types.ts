@@ -33,6 +33,36 @@ export interface Persona {
   createdBy: string;
   /** Foto opcional (data URL). Si no hay, se dibuja una cara ilustrada a partir del nombre. */
   photo?: string;
+  /** Situación y retos del prospecto (texto breve). */
+  situation?: string;
+  /** Datos de la empresa leídos de su web (prospectos creados desde web). */
+  companyInfo?: CompanyInfo;
+  /** true si el nombre es de una persona real (escrito por el comercial o publicado en la web). */
+  realName?: boolean;
+  /** Lo que el comercial le iba a vender cuando se creó el prospecto. */
+  offer?: string;
+}
+
+export type CompanySize = "pyme" | "mediana" | "grande";
+
+export interface CompanyInfo {
+  /** "cliente": la empresa a la que vendes. "tu_negocio": tu propia web (el prospecto es tu cliente ideal). */
+  relation: "cliente" | "tu_negocio";
+  name: string;
+  sector: string;
+  size: CompanySize;
+  offering: string[];
+  customers: string;
+  summary: string;
+  host: string;
+  pagesRead: number;
+  source: "ia" | "reglas";
+}
+
+/** Qué vende el comercial: sirve para elegir con quién hablará y qué objeciones pondrá el prospecto. */
+export interface MyOffer {
+  company: string;
+  product: string;
 }
 
 export interface TranscriptLine {

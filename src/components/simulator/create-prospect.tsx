@@ -241,7 +241,8 @@ const WEB_COPY = {
 
 function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boolean; onClose: () => void }) {
   const save = useSave(onClose);
-  const { toast } = useApp();
+  const { toast, myOffer } = useApp();
+  const [offer, setOffer] = useState(myOffer.product);
   const [url, setUrl] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactRole, setContactRole] = useState("");
@@ -258,7 +259,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       const res = await fetch("/api/personas/from-web", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined }),
+        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined, offer: kind === "client" ? offer : undefined, sellerCompany: myOffer.company }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -292,7 +293,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" disabled={!valid || loading} onClick={create}>
+          <Button variant="primary" disabled={!valid || loading || (kind === "client" && !offer.trim())} onClick={create}>
             {loading && <Loader2 className="size-4 animate-spin" />} {loading ? "Leyendo la web…" : kind === "client" ? "Crear prospecto" : "Generar cliente ideal"}
           </Button>
         </>
@@ -303,6 +304,13 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={copy.placeholder} className="h-10 flex-1 bg-transparent text-sm text-text outline-none" />
       </div>
       <p className="mt-2 text-[11px] text-faint">Leemos la portada y páginas como «Nosotros» o «Servicios» para identificar el rubro, qué vende y a quién.</p>
+      {kind === "client" && (
+        <label className="mt-4 block text-xs text-muted">
+          ¿Qué le vas a vender?
+          <input className={input} value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Ej.: Software de gestión de inventarios" />
+          <span className="mt-1 block text-[11px] text-faint">Define con quién hablarás (por ejemplo, RR. HH. o Compras) y sus objeciones. El valor por defecto se cambia en Cuenta.</span>
+        </label>
+      )}
       {kind === "client" && (
         <div className="mt-4 rounded-lg border border-border p-3">
           <p className="text-xs font-medium text-text">Contacto (opcional)</p>

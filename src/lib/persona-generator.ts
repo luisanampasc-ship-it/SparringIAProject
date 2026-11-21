@@ -37,19 +37,30 @@ export function pickName(gender: Gender, seed: string) {
 }
 
 const SECTORS: [RegExp, string][] = [
-  [/\b(carro|coche|auto(m[oó]vil)?|veh[ií]culo|mazda|toyota|moto)\b/i, "Automotriz"],
-  [/\b(casa|departamento|piso|inmueble|inmobiliari[oa]|terreno)\b/i, "Inmobiliario"],
-  [/\b(restaurante|cafeter[ií]a|bar|hotel|comida)\b/i, "Hostelería"],
-  [/\b(cl[ií]nica|salud|dental|m[eé]dic[oa]|hospital)\b/i, "Salud"],
-  [/\b(software|saas|tecnolog[ií]a|app|startup)\b/i, "Tecnología"],
-  [/\b(curso|formaci[oó]n|universidad|estudiar|maestr[ií]a)\b/i, "Formación"],
-  [/\b(seguro|p[oó]liza)\b/i, "Seguros"],
-  [/\b(gimnasio|fitness|deporte)\b/i, "Fitness"],
-  [/\b(tienda|retail|comercio|e-?commerce)\b/i, "Comercio"],
+  [/\b(banco|bancari[oa]|cuenta de ahorros?|cuentas? de ahorro|tarjetas? de cr[eé]dito|pr[eé]stamos?|cr[eé]dito hipotecario|hipotecas?|financiera|microfinanzas|caja municipal|cooperativa de ahorro|inversiones|fondos mutuos)\b/gi, "Banca y finanzas"],
+  [/\b(seguros?|p[oó]lizas?|aseguradora|siniestros?)\b/gi, "Seguros"],
+  [/\b(telefon[ií]a|internet|fibra [oó]ptica|planes? m[oó]viles?|operador|telecomunicaciones|portabilidad)\b/gi, "Telecomunicaciones"],
+  [/\b(carros?|coches?|autos?|autom[oó]viles?|veh[ií]culos?|concesionari[oa]|mazda|toyota|motos?)\b/gi, "Automotriz"],
+  [/\b(inmobiliari[oa]|departamentos?|inmuebles?|terrenos?|proyectos? de vivienda|constructora|construcci[oó]n)\b/gi, "Inmobiliario y construcción"],
+  [/\b(restaurantes?|cafeter[ií]as?|hoteles?|gastronom[ií]a|delivery de comida|men[uú] del d[ií]a)\b/gi, "Hostelería y restauración"],
+  [/\b(cl[ií]nicas?|salud|dental|m[eé]dic[oa]s?|hospital|farmacias?|laboratorio cl[ií]nico)\b/gi, "Salud"],
+  [/\b(software|saas|plataforma digital|desarrollo de software|nube|ciberseguridad|inteligencia artificial)\b/gi, "Tecnología"],
+  [/\b(universidad|colegio|instituto|cursos?|carreras?|maestr[ií]as?|diplomados?|formaci[oó]n|educaci[oó]n)\b/gi, "Educación y formación"],
+  [/\b(supermercados?|tiendas?|retail|e-?commerce|compra online|cat[aá]logo de productos)\b/gi, "Retail y comercio"],
+  [/\b(log[ií]stica|transporte de carga|courier|almacenes|distribuci[oó]n)\b/gi, "Logística y transporte"],
+  [/\b(energ[ií]a|electricidad|gas natural|petr[oó]leo|miner[ií]a|minera)\b/gi, "Energía y minería"],
+  [/\b(consultor[ií]a|asesor[ií]a|auditor[ií]a|abogados|estudio jur[ií]dico|contadores)\b/gi, "Servicios profesionales"],
+  [/\b(gimnasio|fitness|deportes?)\b/gi, "Fitness y deporte"],
 ];
 
+/** Rubro con más coincidencias en el texto (no la primera palabra que aparezca). */
 export function detectSector(text: string) {
-  return SECTORS.find(([re]) => re.test(text))?.[1];
+  let best: [string, number] | null = null;
+  for (const [re, name] of SECTORS) {
+    const n = (text.match(re) ?? []).length;
+    if (n > 0 && (!best || n > best[1])) best = [name, n];
+  }
+  return best?.[0];
 }
 
 /** B2C cuando la persona compra para sí misma (un carro, una casa, un curso…). */
