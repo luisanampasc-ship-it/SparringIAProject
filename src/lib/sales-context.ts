@@ -49,3 +49,63 @@ export function detectSize(text: string): CompanySize {
   if (/(empresa familiar|peque[ñn]o negocio|emprendimiento|nuestro taller|somos un equipo peque[ñn]o)/i.test(text)) return "pyme";
   return "mediana";
 }
+
+/*
+ * Vocabulario de productos por rubro: sin IA, solo se aceptan como "lo que vende" las
+ * etiquetas del menú que nombran productos típicos del rubro detectado.
+ */
+const PRODUCT_VOCAB: Record<string, RegExp> = {
+  "Banca y finanzas": /(cuentas?|ahorros?|tarjetas?|pr[eé]stamos?|cr[eé]ditos?|hipotecari|vehicular|dep[oó]sitos?|plazo fijo|inversi[oó]n|inversiones|fondos|leasing|factoring|cambio de (moneda|divisas)|transferencias|cts|seguros?|banca (digital|por internet|m[oó]vil)|remesas|confirming|comercio exterior|carta fianza)/i,
+  Seguros: /(seguros?|vida|salud|vehicular|hogar|soat|accidentes|sepelio|eps|rentas?|jubilaci[oó]n)/i,
+  Telecomunicaciones: /(planes?|postpago|prepago|internet|fibra|hogar|televisi[oó]n|cable|tel[eé]fonos?|equipos|celulares|portabilidad|roaming|chip)/i,
+  Automotriz: /(autos?|carros?|veh[ií]culos?|camionetas?|suv|seminuevos?|repuestos|servicio t[eé]cnico|taller|financiamiento|modelos)/i,
+  "Inmobiliario y construcción": /(departamentos?|casas?|lotes?|terrenos?|oficinas|locales|proyectos?|alquiler|venta)/i,
+  "Hostelería y restauración": /(carta|men[uú]|delivery|reservas?|habitaciones|eventos|catering|desayunos?|almuerzos?)/i,
+  Salud: /(consultas?|especialidades|ex[aá]menes|an[aá]lisis|laboratorio|emergencias|planes de salud|chequeos?|odontolog|cirug)/i,
+  Tecnología: /(software|plataforma|soluciones|cloud|nube|ciberseguridad|licencias|servidores|soporte|integraci[oó]n|desarrollo|consultor[ií]a ti|datos)/i,
+  "Educación y formación": /(carreras?|cursos?|maestr[ií]as?|diplomados?|posgrados?|programas?|admisi[oó]n|becas|talleres)/i,
+  "Retail y comercio": /(ropa|calzado|electro|hogar|tecnolog[ií]a|muebles|juguetes|belleza|deportes|ofertas|marcas|supermercado)/i,
+  "Logística y transporte": /(env[ií]os?|courier|carga|almacenaje|almacenes|distribuci[oó]n|aduanas|transporte|flota|rastreo)/i,
+  "Energía y minería": /(electricidad|gas|combustibles?|energ[ií]a|minerales|lubricantes|solar)/i,
+  "Servicios profesionales": /(consultor[ií]a|asesor[ií]a|auditor[ií]a|legal|tributari|contable|laboral|corporativo)/i,
+  "Fitness y deporte": /(planes?|membres[ií]as?|clases|entrenamiento|nutrici[oó]n|sedes)/i,
+};
+
+/** Siempre fuera de "lo que vende": canales, empleo, información corporativa, apps… */
+export const NOT_PRODUCT = /(descarga|app\b|aplicaci[oó]n m[oó]vil|trabaj[ao] con nosotros|empleo|carreras profesionales|bolsa de trabajo|informaci[oó]n financiera|inversionistas|inversores|memoria|estados financieros|sostenibilidad|transparencia|gobierno corporativo|canal de|tasas y tarifas|tarifario|sobre |acerca|sucursales|oficinas y|agencias|cajeros|red de|beneficios para|promociones|novedades|eventos|noticias|prensa|adjudicados|remates|subastas|notariales|reclamos|seguridad|fraude|educaci[oó]n financiera|simulador|calculadora|tipo de cambio|horarios|ubica|cont[aá]ct)/i;
+
+/** Productos típicos por rubro que se buscan en todo el texto cuando el menú no los nombra. */
+const CANONICAL: Record<string, [string, RegExp][]> = {
+  "Banca y finanzas": [
+    ["Cuentas de ahorro", /cuentas? (de )?ahorros?/i],
+    ["Tarjetas de crédito", /tarjetas? de cr[eé]dito/i],
+    ["Préstamos personales", /pr[eé]stamos?/i],
+    ["Créditos hipotecarios", /hipotecari/i],
+    ["Depósitos a plazo", /dep[oó]sitos? a plazo|plazo fijo/i],
+    ["Seguros", /\bseguros?\b/i],
+    ["Inversiones", /fondos mutuos|inversiones/i],
+    ["Banca digital", /banca (digital|por internet|m[oó]vil)/i],
+    ["Créditos para empresas", /cr[eé]ditos? (para|empresariales|pyme)|capital de trabajo|leasing|factoring/i],
+  ],
+  Seguros: [["Seguro vehicular", /vehicular|soat/i], ["Seguro de salud", /seguros? de salud|eps/i], ["Seguro de vida", /seguros? de vida/i], ["Seguro de hogar", /hogar/i]],
+  Telecomunicaciones: [["Planes móviles", /postpago|prepago|planes? m[oó]vil/i], ["Internet hogar", /internet (hogar|fibra)|fibra [oó]ptica/i], ["Televisión", /televisi[oó]n|cable/i], ["Equipos", /celulares|equipos/i]],
+  "Educación y formación": [["Carreras", /carreras?/i], ["Maestrías", /maestr[ií]as?/i], ["Diplomados", /diplomados?/i], ["Cursos", /cursos?/i]],
+  Automotriz: [["Autos nuevos", /autos? nuevos|0 ?km/i], ["Seminuevos", /seminuevos?/i], ["Repuestos", /repuestos/i], ["Servicio técnico", /servicio t[eé]cnico|taller/i], ["Financiamiento", /financiamiento/i]],
+};
+
+/**
+ * Lo que vende la empresa, sin IA:
+ * 1) etiquetas del menú que nombran productos del rubro; 2) si hay pocas, productos típicos
+ * del rubro que aparecen en el texto de la web; 3) si no, las etiquetas filtradas.
+ * `approx` indica que la lista es poco fiable.
+ */
+export function productsFrom(labels: string[], sector: string, text = ""): { items: string[]; approx: boolean } {
+  const clean = [...new Set(labels.map((l) => l.trim()))].filter((l) => !NOT_PRODUCT.test(l));
+  const vocab = PRODUCT_VOCAB[sector];
+  const matched = vocab ? clean.filter((l) => vocab.test(l)) : [];
+  if (matched.length >= 3) return { items: matched.slice(0, 6), approx: false };
+  const fromText = (CANONICAL[sector] ?? []).filter(([, re]) => re.test(text)).map(([name]) => name);
+  const combined = [...new Set([...matched, ...fromText])];
+  if (combined.length >= 2) return { items: combined.slice(0, 6), approx: false };
+  return { items: (combined.length ? combined : clean).slice(0, 6), approx: true };
+}

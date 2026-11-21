@@ -15,7 +15,7 @@ export function PersonaDetails({ persona }: { persona: Persona }) {
           </p>
           {c.offering.length > 0 && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted">Vende:</span>
+              <span className="text-xs text-muted">{c.offeringApprox ? "Vende (aproximado):" : "Vende:"}</span>
               {c.offering.map((o) => (
                 <Badge key={o} className="bg-surface-2 font-medium text-text">
                   {o}
@@ -35,7 +35,7 @@ export function PersonaDetails({ persona }: { persona: Persona }) {
       <Section title="El prospecto">
         <p className="font-medium text-text">
           {persona.name} · {persona.role}
-          {persona.realName === false && <span className="ml-1.5 text-xs font-normal text-faint">(nombre ficticio)</span>}
+          {persona.nameSource && <NameSourceBadge source={persona.nameSource} />}
         </p>
         <p className="mt-1 text-muted">{persona.situation ?? persona.description}</p>
         {persona.offer && (
@@ -66,11 +66,24 @@ export function PersonaDetails({ persona }: { persona: Persona }) {
       {c && (
         <p className="text-[11px] text-faint">
           Fuente: {c.host} · {c.pagesRead} {c.pagesRead === 1 ? "página leída" : "páginas leídas"} · {c.source === "ia" ? "analizada con IA" : "análisis básico (sin IA)"}
-          {persona.realName && " · Nombre real basado en información pública; la personalidad y las objeciones son simuladas"}
+          {persona.realName && " · El nombre es real; la personalidad y las objeciones son simuladas"}
         </p>
       )}
     </div>
   );
+}
+
+const NAME_SOURCE = {
+  linkedin: { label: "Contacto de LinkedIn", cls: "bg-info-soft text-info" },
+  otra: { label: "Contacto real (otra fuente)", cls: "bg-info-soft text-info" },
+  web: { label: "Publicado en su web", cls: "bg-good-soft text-good" },
+  ficticio: { label: "Nombre ficticio", cls: "bg-surface-2 text-muted" },
+} as const;
+
+/** Indica si el nombre del prospecto es real (y de dónde sale) o ficticio. */
+export function NameSourceBadge({ source }: { source: NonNullable<Persona["nameSource"]> }) {
+  const s = NAME_SOURCE[source];
+  return <Badge className={`ml-1.5 align-middle ${s.cls}`}>{s.label}</Badge>;
 }
 
 /** Oculta los datos que la lectura de la web no pudo determinar. */

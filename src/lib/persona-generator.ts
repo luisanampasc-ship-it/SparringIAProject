@@ -89,8 +89,8 @@ function roleFor(gender: Gender, consumer: boolean, text: string) {
 }
 
 /** Genera un prospecto a partir de una descripción libre. */
-export function generateFromDescription(prompt: string, base: Persona): Persona {
-  const gender = detectGender(prompt) ?? (hash(prompt) % 2 ? "masculino" : "femenino");
+export function generateFromDescription(prompt: string, base: Persona, forcedGender?: Gender): Persona {
+  const gender = forcedGender ?? detectGender(prompt) ?? (hash(prompt) % 2 ? "masculino" : "femenino");
   const consumer = isConsumer(prompt);
   const sector = detectSector(prompt) ?? "Servicios profesionales";
   const clean = prompt.trim().replace(/\s+/g, " ");

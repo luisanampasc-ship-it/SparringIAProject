@@ -4,9 +4,9 @@ import { Globe, Loader2, Mic, PencilLine, Sparkles, Star, Store, UploadCloud } f
 import { useState } from "react";
 import { useApp } from "@/components/app-state";
 import { PersonaAvatar } from "@/components/persona-face";
-import { Button, Modal, Popover, Select } from "@/components/ui";
+import { Button, Modal, Popover, Segmented, Select } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
-import { generateFromClientWeb, generateFromDescription, generateFromOwnWeb } from "@/lib/persona-generator";
+import { generateFromClientWeb, generateFromDescription, generateFromOwnWeb, pickName } from "@/lib/persona-generator";
 import type { Gender, Persona } from "@/lib/types";
 
 type Mode = "ai" | "manual" | "web-client" | "web-own" | "audio" | null;
@@ -88,6 +88,7 @@ function useSave(onClose: () => void) {
 function AiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const save = useSave(onClose);
   const [prompt, setPrompt] = useState("");
+  const [gender, setGender] = useState<GenderChoice>("auto");
   const [loading, setLoading] = useState(false);
   return (
     <Modal
@@ -105,7 +106,8 @@ function AiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
               setLoading(true);
               setTimeout(() => {
                 setLoading(false);
-                save(generateFromDescription(prompt, blank()));
+                save({ ...generateFromDescription(prompt, blank(), gender === "auto" ? undefined : gender), nameSource: "ficticio" });
+                setGender("auto");
                 setPrompt("");
               }, 1500);
             }}
@@ -116,6 +118,7 @@ function AiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       }
     >
       <p className="mb-2 text-xs text-muted">Indica si es hombre o mujer, su edad, a qué se dedica y qué le frena: el perfil, el nombre, la cara y la voz se adaptan a lo que escribas.</p>
+      <GenderField value={gender} onChange={setGender} hint="Si eliges «Automático», se deduce de la descripción." />
       <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ej.: Hombre de 45 años, dueño de una cadena de 3 cafeterías en Lima, desconfía de la tecnología y le preocupa el margen…" className={`${area} h-32`} />
     </Modal>
   );
@@ -246,6 +249,8 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
   const [url, setUrl] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactRole, setContactRole] = useState("");
+  const [contactSource, setContactSource] = useState<"linkedin" | "otra">("linkedin");
+  const [gender, setGender] = useState<GenderChoice>("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const normalized = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
@@ -259,7 +264,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       const res = await fetch("/api/personas/from-web", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined, offer: kind === "client" ? offer : undefined, sellerCompany: myOffer.company }),
+        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined, offer: kind === "client" ? offer : undefined, sellerCompany: myOffer.company, gender: gender === "auto" ? undefined : gender, contactSource: contactName ? contactSource : undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -275,9 +280,11 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       setUrl("");
       setContactName("");
       setContactRole("");
+      setGender("auto");
     } catch {
       // Sin conexión con el servidor: perfil aproximado a partir del dominio.
-      save(kind === "client" ? generateFromClientWeb(normalized, blank()) : generateFromOwnWeb(normalized, blank()));
+      const fallback = kind === "client" ? generateFromClientWeb(normalized, blank()) : generateFromOwnWeb(normalized, blank());
+      save(gender === "auto" ? fallback : { ...fallback, gender, name: pickName(gender, normalized) });
       toast("No se pudo leer la web: se creó un perfil aproximado a partir del dominio");
     } finally {
       setLoading(false);
@@ -304,6 +311,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={copy.placeholder} className="h-10 flex-1 bg-transparent text-sm text-text outline-none" />
       </div>
       <p className="mt-2 text-[11px] text-faint">Leemos la portada y páginas como «Nosotros» o «Servicios» para identificar el rubro, qué vende y a quién.</p>
+      <GenderField value={gender} onChange={setGender} />
       {kind === "client" && (
         <label className="mt-4 block text-xs text-muted">
           ¿Qué le vas a vender?
@@ -319,6 +327,12 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
             <input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Nombre y apellido" className={input} />
             <input value={contactRole} onChange={(e) => setContactRole(e.target.value)} placeholder="Cargo" className={input} />
           </div>
+          {contactName.trim() && (
+            <div className="mt-2 space-y-1">
+              {gender === "auto" && <p className="text-[11px] text-warn">Indica arriba el sexo del contacto para que la cara y la voz concuerden.</p>}
+              <Select label="¿De dónde sale este contacto?" value={contactSource} onChange={setContactSource} options={[{ value: "linkedin", label: "LinkedIn" }, { value: "otra", label: "Otra fuente (referido, tarjeta, evento…)" }]} />
+            </div>
+          )}
         </div>
       )}
       {error && <p className="mt-3 rounded-lg bg-bad-soft px-3 py-2 text-xs text-bad">{error}</p>}
@@ -362,5 +376,26 @@ function AudioModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         <input type="file" accept="audio/*,video/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       </label>
     </Modal>
+  );
+}
+
+type GenderChoice = "auto" | Gender;
+
+/** Sexo del prospecto, opcional: si se deja en automático se deduce de la descripción o de la web. */
+function GenderField({ value, onChange, hint }: { value: GenderChoice; onChange: (v: GenderChoice) => void; hint?: string }) {
+  return (
+    <div className="my-3 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted">Sexo del prospecto:</span>
+      <Segmented
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "auto", label: "Automático" },
+          { value: "femenino", label: "Mujer" },
+          { value: "masculino", label: "Hombre" },
+        ]}
+      />
+      {hint && <span className="text-[11px] text-faint">{hint}</span>}
+    </div>
   );
 }

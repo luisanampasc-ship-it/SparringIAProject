@@ -39,11 +39,14 @@ export interface Persona {
   companyInfo?: CompanyInfo;
   /** true si el nombre es de una persona real (escrito por el comercial o publicado en la web). */
   realName?: boolean;
+  /** De dónde sale el nombre: LinkedIn u otra fuente (escrito por el comercial), la web de la empresa o ficticio. */
+  nameSource?: NameSource;
   /** Lo que el comercial le iba a vender cuando se creó el prospecto. */
   offer?: string;
 }
 
 export type CompanySize = "pyme" | "mediana" | "grande";
+export type NameSource = "linkedin" | "otra" | "web" | "ficticio";
 
 export interface CompanyInfo {
   /** "cliente": la empresa a la que vendes. "tu_negocio": tu propia web (el prospecto es tu cliente ideal). */
@@ -57,6 +60,8 @@ export interface CompanyInfo {
   host: string;
   pagesRead: number;
   source: "ia" | "reglas";
+  /** true si la lista de lo que vende es aproximada (sin IA y con pocos datos en la web). */
+  offeringApprox?: boolean;
 }
 
 /** Qué vende el comercial: sirve para elegir con quién hablará y qué objeciones pondrá el prospecto. */
