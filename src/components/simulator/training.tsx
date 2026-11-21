@@ -11,9 +11,13 @@ import { CURRENT_USER } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
 import { simulateAnalyzedSession } from "@/lib/demo-data";
 import type { CallType, Persona, TranscriptLine } from "@/lib/types";
+import type { SessionConfig, VoiceConversation } from "@elevenlabs/client";
+
+type VoiceOverrides = NonNullable<SessionConfig["overrides"]>;
 import { cn } from "@/lib/utils";
 
-export type Difficulty = "facil" | "medio" | "dificil";
+export type { Difficulty } from "@/lib/prospect-prompt";
+import type { Difficulty } from "@/lib/prospect-prompt";
 
 const DIFFICULTIES: { id: Difficulty; label: string; sub: string; dot: string }[] = [
   { id: "facil", label: "Fácil", sub: "Receptivo, pocas objeciones", dot: "bg-good" },
@@ -208,6 +212,13 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const [level, setLevel] = useState(0);
   const [micOk, setMicOk] = useState(true);
   const [interim, setInterim] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  // Motor de voz: "eleven" (ElevenLabs Agents, si hay clave en el servidor) o "demo" (voz del navegador).
+  const [engine, setEngine] = useState<"demo" | "eleven">("demo");
+  const engineRef = useRef<"demo" | "eleven">("demo");
+  const convo = useRef<VoiceConversation | null>(null);
+  const elevenVoice = useRef("");
+  const ended = useRef(false);
   const stream = useRef<MediaStream | null>(null);
   const recognition = useRef<Recognition | null>(null);
   const live = useRef(false);
@@ -238,6 +249,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
 
   useEffect(() => {
     mutedRef.current = muted;
+    convo.current?.setMicMuted(muted);
   }, [muted]);
 
   useEffect(() => {
@@ -364,6 +376,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       const v = vad.current;
       const talking = now - v.lastVoice < 250;
       setRepTalking(talking);
+      // Con ElevenLabs, los turnos e interrupciones los gestiona su agente.
+      if (engineRef.current !== "demo") return;
       // Interrupción: si el comercial habla mientras el prospecto habla, el prospecto se calla y escucha.
       if (talking && turnRef.current === "prospect" && v.lastVoice - v.speechStart > BARGE_IN_MS) {
         try {
@@ -384,11 +398,78 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     return () => clearInterval(tick);
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Pide al servidor una sesión de ElevenLabs. Devuelve null si no está configurado (modo demo). */
+  async function requestVoiceSession(): Promise<{ token: string; voiceName: string; overrides: VoiceOverrides } | null | "blocked"> {
+    try {
+      const res = await fetch("/api/voice/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ persona, difficulty: config.difficulty, callType: config.callType, remainingMinutes: remainingMin }),
+      });
+      if (res.status === 501) return null;
+      const data = await res.json();
+      if (res.status === 403) {
+        toast(data.error ?? "Has alcanzado tu límite mensual de minutos");
+        return "blocked";
+      }
+      if (!res.ok) {
+        toast(`${data.error ?? "No se pudo conectar con ElevenLabs"}. La sesión seguirá en modo demo.`);
+        return null;
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Conecta con el agente de ElevenLabs y traduce sus eventos a los turnos y la transcripción de la app. */
+  async function startEleven(session: { token: string; voiceName: string; overrides: VoiceOverrides }) {
+    const { Conversation } = await import("@elevenlabs/client");
+    elevenVoice.current = session.voiceName;
+    convo.current = (await Conversation.startSession({
+      conversationToken: session.token,
+      connectionType: "webrtc",
+      overrides: session.overrides,
+      onModeChange: ({ mode }) => {
+        if (mode === "speaking") setTurnBoth("prospect");
+        else if (turnRef.current === "prospect") setTurnBoth("rep");
+      },
+      onMessage: ({ role, message }) => {
+        if (!message.trim()) return;
+        if (role === "agent") {
+          captured.current.push({ t: elapsed(), speaker: "prospect", text: message });
+          setLines((l) => [...l, { who: "prospect", text: message }]);
+          return;
+        }
+        // Intervención del comercial ya transcrita: tono medido con el micrófono durante su turno.
+        const st = turnStats.current;
+        const spoken = Math.max(1, Math.round((st.frames * 16) / 1000));
+        const tone = st.frames ? toneLabel(st.sum / st.frames, st.pauses, spoken) : undefined;
+        captured.current.push({ t: Math.max(0, elapsed() - spoken), speaker: "rep", text: message, tone });
+        setLines((l) => [...l, { who: "rep", text: message, tone }]);
+        turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+        // Desde aquí hasta que el prospecto empiece a hablar, la IA está preparando su respuesta: no cuenta.
+        if (turnRef.current === "rep") setTurnBoth("thinking");
+      },
+      onDisconnect: (details) => {
+        if (details.reason !== "user" && live.current) {
+          if (details.reason === "error") toast(`Se cortó la llamada: ${details.message}`);
+          hangUp();
+        }
+      },
+      onError: (message) => toast(`ElevenLabs: ${message}`),
+    })) as VoiceConversation;
+  }
+
   async function start() {
     if (remainingMin <= 0) {
       toast("Has alcanzado tu límite mensual de minutos de simulador");
       return;
     }
+    setConnecting(true);
+    const session = await requestVoiceSession();
+    setConnecting(false);
+    if (session === "blocked") return;
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       const ctx = new AudioContext();
@@ -430,8 +511,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       setMicOk(false);
       toast("No se pudo acceder al micrófono: usa el botón «He terminado» para ceder el turno");
     }
-    // Transcripción en directo de lo que dice el comercial.
-    const rec = createRecognition();
+    // Transcripción en directo de lo que dice el comercial (solo en modo demo; ElevenLabs transcribe por su cuenta).
+    const rec = session ? null : createRecognition();
     if (rec) {
       rec.lang = "es-ES";
       rec.continuous = true;
@@ -467,15 +548,33 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     voice.current = pickVoice(persona.gender);
     live.current = true;
     callStart.current = performance.now();
-    setPhase("live");
-    // El prospecto descuelga y saluda; a partir de aquí siempre espera a que el comercial termine.
     // Mientras conecta, el turno es "thinking" y no cuenta como minutos.
     setTurnBoth("thinking");
+    if (session) {
+      try {
+        engineRef.current = "eleven";
+        setEngine("eleven");
+        setPhase("live");
+        await startEleven(session);
+        return;
+      } catch (e) {
+        console.error(e);
+        toast("No se pudo iniciar la voz de ElevenLabs: la sesión seguirá en modo demo");
+        engineRef.current = "demo";
+        setEngine("demo");
+      }
+    }
+    setPhase("live");
+    // El prospecto descuelga y saluda; a partir de aquí siempre espera a que el comercial termine.
     setTimeout(prospectSpeaks, 900);
   }
 
   function hangUp() {
+    if (ended.current) return;
+    ended.current = true;
     live.current = false;
+    convo.current?.endSession().catch(() => undefined);
+    convo.current = null;
     recognition.current?.stop();
     recognition.current = null;
     flushRepTurn();
@@ -511,7 +610,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
         transcript,
         analysis: base.analysis ? { ...base.analysis, tone } : null,
-        capture: { prospectVoice: voice.current.label, transcribed },
+        capture: { prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label, transcribed },
       };
       addSession(s);
       pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });
@@ -542,8 +641,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           <p className={cn("mt-2 text-xs", remainingMin > 0 ? "text-faint" : "font-semibold text-bad")}>
             {remainingMin > 0 ? `Te quedan ${remainingMin} min de tu límite mensual` : "Has alcanzado tu límite mensual de minutos"}
           </p>
-          <Button variant="primary" disabled={remainingMin <= 0} className="mt-5 h-11 w-full rounded-full text-base shadow-lg shadow-primary/30" onClick={start}>
-            <Play className="size-4" /> Iniciar entrenamiento
+          <Button variant="primary" disabled={remainingMin <= 0 || connecting} className="mt-5 h-11 w-full rounded-full text-base shadow-lg shadow-primary/30" onClick={start}>
+            <Play className="size-4" /> {connecting ? "Conectando…" : "Iniciar entrenamiento"}
           </Button>
           <button onClick={onExit} className="mt-3 text-xs text-faint hover:text-text">
             ← Volver al simulador
@@ -593,6 +692,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             <button onClick={() => setMuted((m) => !m)} className={cn("grid size-12 place-items-center rounded-full border border-border", muted ? "bg-bad-soft text-bad" : "text-text")} aria-label="Silenciar">
               {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
             </button>
+            {engine === "demo" && (
             <button
               onClick={endRepTurn}
               disabled={turn !== "rep"}
@@ -601,17 +701,26 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             >
               <Hand className="size-4" /> He terminado
             </button>
+            )}
             <button onClick={hangUp} className="grid size-12 place-items-center rounded-full bg-bad text-white" aria-label="Colgar">
               <PhoneOff className="size-5" />
             </button>
           </div>
-          <p className="mt-4 text-center text-[10px] text-faint">
-            {micOk ? "El prospecto responde cuando haces una pausa de ~1 segundo. Si le interrumpes, se calla y te escucha." : "Sin micrófono: pulsa «He terminado» para que el prospecto responda."}
-            <br />
-            Voz del prospecto: {voice.current.label}. Al colgar verás la transcripción y el tono de tu llamada.
-            <br />
-            Modo demo: conecta OpenAI Realtime para conversar con el prospecto de verdad (ver README).
-          </p>
+          {engine === "eleven" ? (
+            <p className="mt-4 text-center text-[10px] text-faint">
+              Conversación con voz real (ElevenLabs) · Voz: {elevenVoice.current}. Habla con naturalidad: el prospecto espera a que termines y, si le interrumpes, se calla.
+              <br />
+              Al colgar verás la transcripción y el tono de tu llamada.
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-[10px] text-faint">
+              {micOk ? "El prospecto responde cuando haces una pausa de ~1 segundo. Si le interrumpes, se calla y te escucha." : "Sin micrófono: pulsa «He terminado» para que el prospecto responda."}
+              <br />
+              Voz del prospecto: {voice.current.label}. Al colgar verás la transcripción y el tono de tu llamada.
+              <br />
+              Modo demo: configura ElevenLabs (ELEVENLABS_API_KEY) para conversar con el prospecto con voz real.
+            </p>
+          )}
         </div>
       )}
 
