@@ -15,9 +15,13 @@ export interface Rep {
   active: boolean;
 }
 
+export type Gender = "masculino" | "femenino";
+
 export interface Persona {
   id: string;
   name: string;
+  /** Determina el nombre sugerido, la cara ilustrada y la voz del prospecto en la llamada. */
+  gender?: Gender;
   role: string;
   company: string;
   sector: string;
@@ -29,12 +33,49 @@ export interface Persona {
   createdBy: string;
   /** Foto opcional (data URL). Si no hay, se dibuja una cara ilustrada a partir del nombre. */
   photo?: string;
+  /** Situación y retos del prospecto (texto breve). */
+  situation?: string;
+  /** Datos de la empresa leídos de su web (prospectos creados desde web). */
+  companyInfo?: CompanyInfo;
+  /** true si el nombre es de una persona real (escrito por el comercial o publicado en la web). */
+  realName?: boolean;
+  /** De dónde sale el nombre: LinkedIn u otra fuente (escrito por el comercial), la web de la empresa o ficticio. */
+  nameSource?: NameSource;
+  /** Lo que el comercial le iba a vender cuando se creó el prospecto. */
+  offer?: string;
+}
+
+export type CompanySize = "pyme" | "mediana" | "grande";
+export type NameSource = "linkedin" | "otra" | "web" | "ficticio";
+
+export interface CompanyInfo {
+  /** "cliente": la empresa a la que vendes. "tu_negocio": tu propia web (el prospecto es tu cliente ideal). */
+  relation: "cliente" | "tu_negocio";
+  name: string;
+  sector: string;
+  size: CompanySize;
+  offering: string[];
+  customers: string;
+  summary: string;
+  host: string;
+  pagesRead: number;
+  source: "ia" | "reglas";
+  /** true si la lista de lo que vende es aproximada (sin IA y con pocos datos en la web). */
+  offeringApprox?: boolean;
+}
+
+/** Qué vende el comercial: sirve para elegir con quién hablará y qué objeciones pondrá el prospecto. */
+export interface MyOffer {
+  company: string;
+  product: string;
 }
 
 export interface TranscriptLine {
   t: number; // segundos
   speaker: "rep" | "prospect";
   text: string;
+  /** Tono detectado en la intervención (solo en llamadas grabadas en el simulador). */
+  tone?: string;
 }
 
 export interface ScriptBranch {
@@ -116,6 +157,8 @@ export interface Session {
   versions: number;
   hasAudio: boolean;
   audioUrl?: string;
+  /** Datos capturados en directo en una sesión del simulador. */
+  capture?: { prospectVoice: string; transcribed: boolean };
 }
 
 export interface RubricCategory {

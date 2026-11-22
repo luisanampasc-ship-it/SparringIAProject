@@ -50,7 +50,7 @@ function LlamadasInner() {
             }}
           />
         ) : session ? (
-          <CallDetail session={session} onBack={() => router.push("/llamadas", { scroll: false })} />
+          <CallDetail session={session} initialTab={params.get("vista") === "transcripcion" ? "transcripcion" : "resumen"} onBack={() => router.push("/llamadas", { scroll: false })} />
         ) : (
           <Empty icon={<Phone className="size-8" />} title="Selecciona una llamada" text="Elige una sesión de la biblioteca para ver su análisis completo, o sube una nueva llamada." />
         )}

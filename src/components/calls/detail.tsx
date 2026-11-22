@@ -12,11 +12,11 @@ import type { CallType, Outcome, Session } from "@/lib/types";
 import { cn, formatLongDate, formatTime, scoreTone, toneText } from "@/lib/utils";
 import { WaveformPlayer, type PlayerHandle } from "./player";
 
-type Tab = "resumen" | "feedback" | "transcripcion";
+export type Tab = "resumen" | "feedback" | "transcripcion";
 
-export function CallDetail({ session, onBack }: { session: Session; onBack: () => void }) {
+export function CallDetail({ session, onBack, initialTab = "resumen" }: { session: Session; onBack: () => void; initialTab?: Tab }) {
   const { rubrics, setOutcome, updateSession, toast, notes, setNote } = useApp();
-  const [tab, setTab] = useState<Tab>("resumen");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -26,7 +26,7 @@ export function CallDetail({ session, onBack }: { session: Session; onBack: () =
   const a = session.analysis;
   const rubric = rubrics[session.callType];
 
-  useEffect(() => setTab("resumen"), [session.id]);
+  useEffect(() => setTab(initialTab), [session.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const copy = (text: string, msg: string) => {
     navigator.clipboard?.writeText(text).then(() => toast(msg), () => toast("No se pudo copiar"));
@@ -430,8 +430,34 @@ function Quote({ who, text, cls }: { who: string; text: string; cls: string }) {
 function Transcript({ session, onSeek }: { session: Session; onSeek: (t: number) => void }) {
   const [q, setQ] = useState("");
   const objQuotes = session.objections.map((o) => o.quote);
+  const tone = session.analysis?.tone;
+  const toneCounts = session.transcript.filter((l) => l.tone).reduce<Record<string, number>>((acc, l) => ({ ...acc, [l.tone!]: (acc[l.tone!] ?? 0) + 1 }), {});
   return (
     <div className="mt-4">
+      {session.capture && (
+        <Card className="mb-4 p-5">
+          <h3 className="text-sm font-semibold text-text">Tono de la llamada</h3>
+          <p className="mt-0.5 text-xs text-muted">
+            {session.capture.transcribed ? "Transcripción de lo que dijiste en el simulador" : "Tu navegador no permitió transcribir tu voz: se muestran tus intervenciones con su duración"} · Voz del prospecto: {session.capture.prospectVoice}
+          </p>
+          {tone && (
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <ToneStat label="Ratio de habla" value={`${tone.talkRatio}%`} hint="del tiempo hablaste tú (ideal 40-50%)" />
+              <ToneStat label="Pausas largas" value={tone.pauses} hint="silencios de más de 1 s mientras hablabas" />
+              <ToneStat label="Energía" value={`${tone.energy}%`} hint="volumen y viveza de la voz" />
+            </div>
+          )}
+          {Object.keys(toneCounts).length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Object.entries(toneCounts).map(([k, n]) => (
+                <Badge key={k} className="bg-primary-soft text-primary-text">
+                  {k} · {n} {n === 1 ? "intervención" : "intervenciones"}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-surface px-3">
         <Search className="size-4 text-faint" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar en la transcripción…" className="h-9 flex-1 bg-transparent text-sm text-text outline-none" />
@@ -450,6 +476,7 @@ function Transcript({ session, onSeek }: { session: Session; onSeek: (t: number)
                   <p className={cn("flex items-center gap-1 text-[11px] font-semibold", l.speaker === "rep" ? "text-primary-text" : "text-good")}>
                     <User className="size-3" /> {l.speaker === "rep" ? "Comercial" : "Prospecto"}
                     {isObj && <Badge className="ml-1 bg-warn-soft text-warn">Objeción</Badge>}
+                    {l.tone && <Badge className="ml-1 bg-surface-2 text-muted">Tono: {l.tone}</Badge>}
                   </p>
                   <p className="text-sm text-text">{l.text}</p>
                 </div>

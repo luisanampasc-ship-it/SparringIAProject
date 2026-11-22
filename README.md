@@ -74,8 +74,18 @@ Los puntos donde hoy hay simulación están marcados en el código con comentari
 
 1. **Supabase**: auth (email + Google), tablas `organizations`, `members`, `sessions`, `objections`, `skill_detections`, `key_moments`, `personas`, `rubrics`, `notifications`; Storage para audios; RLS por organización (los comerciales ven solo lo suyo).
 2. **Pipeline de análisis** (`/api/analyze`): transcripción con diarización (OpenAI `gpt-4o-transcribe`, AssemblyAI o Deepgram) → métricas de tono → LLM con salida JSON validada con Zod usando la rúbrica de la organización → guardar como nueva versión → notificación. Reemplaza `simulateAnalyzedSession` en `src/lib/demo-data.ts`.
-3. **Simulador de voz**: OpenAI Realtime API por WebRTC (endpoint `/api/realtime-token` que emite tokens efímeros y valida el límite de minutos del colaborador). El *system prompt* se construye con la persona, la dificultad y el tipo de llamada. Usar `turn_detection: { type: "server_vad", silence_duration_ms: ~800 }` con interrupción activada para que el prospecto no hable encima del comercial. Reemplaza el modo demo de `src/components/simulator/training.tsx`.
-4. **Generación de prospectos** (`/api/personas/generate`): desde descripción, URL (scraping + LLM) o audio.
+3. **Simulador de voz con ElevenLabs Agents** (ya integrado, se activa con `ELEVENLABS_API_KEY`):
+   - `/api/voice/session` (servidor) crea o reutiliza el agente "Sparring IA · Prospecto" con permiso para que cada llamada envíe su guion, primer mensaje, idioma y voz; elige una voz con acento peruano según el sexo del prospecto (o las de `ELEVENLABS_VOICE_FEMALE` / `ELEVENLABS_VOICE_MALE`) y devuelve un token temporal de WebRTC. La clave nunca llega al navegador.
+   - El guion se construye en `src/lib/prospect-prompt.ts` con la ficha del prospecto, la dificultad, el tipo de llamada y lo que vende el comercial (español de Perú, respuestas cortas, sin romper el personaje).
+   - En el navegador (`src/components/simulator/training.tsx`) se usa `@elevenlabs/client`: sus eventos alimentan la transcripción, los turnos y los minutos contados (el tiempo entre que el comercial termina y el prospecto empieza a hablar no cuenta).
+   - El modelo de IA del agente se puede cambiar en el panel de ElevenLabs (por ejemplo, un modelo de Claude rápido para menor latencia).
+   - Sin la clave, o si ElevenLabs falla, el simulador sigue en modo demo con la voz del navegador.
+   - Pendiente: validar el límite de minutos en el servidor con la base de datos (hoy lo envía el cliente).
+4. **Generación de prospectos**: desde descripción o desde audio (hoy con las reglas de `src/lib/persona-generator.ts`), y desde web, que ya funciona en `/api/personas/from-web`:
+   - Lee la portada y hasta 4 páginas internas («Nosotros», «Servicios», «Equipo»…) de la web indicada, solo URLs públicas http(s).
+   - Con `ANTHROPIC_API_KEY` usa Claude para extraer rubro, qué vende, a quién y el equipo directivo publicado; sin la clave usa reglas sencillas.
+   - Nombre del prospecto: el contacto que escriba el comercial > un directivo que aparezca en la web > nombre ficticio. Si es un nombre real, la descripción indica que se basa en información pública y que la personalidad y las objeciones son simuladas.
+   - **Pendiente (fase 2): Apollo.** Conectar un proveedor de datos B2B (Apollo u otro similar, con API de pago) para obtener decisores reales a partir del dominio. No se extraen datos de LinkedIn porque sus condiciones lo prohíben.
 5. **Exportar PDF** con `@react-pdf/renderer` (hoy usa la impresión del navegador).
 6. **Integraciones**: webhook `/api/ingest` con API key, OAuth de Zoom/HubSpot, alertas en Slack.
 7. **Créditos y pagos** con Stripe.

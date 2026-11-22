@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import type { Persona } from "@/lib/types";
+import type { Gender, Persona } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /*
@@ -18,15 +18,19 @@ function hash(str: string) {
   return h >>> 0;
 }
 
-export function Face({ seed, className }: { seed: string; className?: string }) {
+// Peinados: 0 corto, 1 largo, 2 moño, 3 rizado, 4 rapado.
+const STYLES: Record<Gender | "any", number[]> = { femenino: [1, 2, 3, 1], masculino: [0, 3, 4, 0], any: [0, 1, 2, 3, 4] };
+
+export function Face({ seed, gender, className }: { seed: string; gender?: Gender; className?: string }) {
   const h = hash(seed);
   const pickN = <T,>(xs: T[], shift: number) => xs[(h >>> shift) % xs.length];
   const skin = pickN(SKIN, 0);
   const hair = pickN(HAIR, 3);
   const shirt = pickN(SHIRT, 6);
-  const style = (h >>> 9) % 5; // 0 corto, 1 largo, 2 moño, 3 rizado, 4 rapado
+  const styles = STYLES[gender ?? "any"];
+  const style = styles[(h >>> 9) % styles.length];
   const glasses = (h >>> 12) % 4 === 0;
-  const beard = style !== 1 && style !== 2 && (h >>> 14) % 4 === 0;
+  const beard = gender !== "femenino" && style !== 1 && style !== 2 && (h >>> 14) % 4 === 0;
 
   return (
     <svg viewBox="0 0 64 64" className={cn("block", className)} aria-hidden>
@@ -76,10 +80,10 @@ export function Face({ seed, className }: { seed: string; className?: string }) 
 }
 
 /** Avatar del prospecto: su foto si la tiene o, si no, la cara ilustrada. */
-export function PersonaAvatar({ persona, className, ring }: { persona: Pick<Persona, "name" | "photo">; className?: string; ring?: boolean }) {
+export function PersonaAvatar({ persona, className, ring }: { persona: Pick<Persona, "name" | "photo" | "gender">; className?: string; ring?: boolean }) {
   return (
     <span className={cn("block size-10 shrink-0 overflow-hidden rounded-full bg-primary-soft", ring && "ring-4 ring-surface", className)}>
-      {persona.photo ? <img src={persona.photo} alt={persona.name} className="size-full object-cover" /> : <Face seed={persona.name} className="size-full" />}
+      {persona.photo ? <img src={persona.photo} alt={persona.name} className="size-full object-cover" /> : <Face seed={persona.name} gender={persona.gender} className="size-full" />}
     </span>
   );
 }

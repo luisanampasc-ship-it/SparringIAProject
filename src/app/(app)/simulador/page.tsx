@@ -6,6 +6,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useApp } from "@/components/app-state";
 import { CreateProspectMenu } from "@/components/simulator/create-prospect";
 import { CallScreen, TrainingConfigModal, type Difficulty } from "@/components/simulator/training";
+import { NameSourceBadge } from "@/components/persona-details";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Badge, Card, Modal, PageHeader, Popover, ProgressBar, Select } from "@/components/ui";
 import { CURRENT_USER, REPS } from "@/lib/catalog";
@@ -109,9 +110,12 @@ function SimuladorInner() {
               <PersonaAvatar persona={p} ring className="absolute -bottom-7 left-4 size-16" />
             </div>
             <div className="p-4 pt-9">
-              <p className="font-semibold text-text">{p.name}</p>
+              <p className="font-semibold text-text">
+                {p.name}
+                {p.nameSource && <NameSourceBadge source={p.nameSource} />}
+              </p>
               <Badge className="mt-1 bg-primary-soft text-primary-text">{p.role}</Badge>
-              <p className="mt-2 line-clamp-2 text-xs text-muted">{p.description}</p>
+              <p className="mt-2 line-clamp-2 text-xs text-muted">{p.situation ?? p.description}</p>
               <p className="mt-2 text-[10px] tracking-wide text-faint uppercase">
                 {p.company} · {p.segment}
               </p>
@@ -140,7 +144,7 @@ function SimuladorInner() {
           <li>Pulsa &ldquo;Iniciar entrenamiento&rdquo;, permite el micrófono y habla como en una llamada real.</li>
           <li>Al colgar, la IA analiza la sesión con los mismos criterios que tus llamadas reales.</li>
           <li>Cuando termines de hablar, haz una breve pausa: el prospecto espera a que acabes antes de responder. Si le interrumpes, se calla y te escucha.</li>
-          <li>Cada minuto de práctica consume un minuto de créditos y cuenta para tu límite mensual de minutos.</li>
+          <li>Cada minuto de conversación consume un minuto de créditos y cuenta para tu límite mensual. El tiempo que el prospecto tarda en responder no se cuenta.</li>
         </ol>
       </Modal>
     </div>
