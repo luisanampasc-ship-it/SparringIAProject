@@ -31,8 +31,13 @@ function LoginInner() {
   const [name, setName] = useState("");
   const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(params.get("error") ?? "");
+  const [error, setError] = useState(() => {
+    const code = params.get("error_code");
+    if (code === "otp_expired") return "El enlace del correo caducó o ya se usó. Entra con tu email y contraseña y pulsa «Reenviar correo de confirmación».";
+    return params.get("error_description") ?? params.get("error") ?? "";
+  });
   const [info, setInfo] = useState("");
+  const [needsConfirm, setNeedsConfirm] = useState(false);
 
   if (!supabase) {
     return (
@@ -45,12 +50,25 @@ function LoginInner() {
     );
   }
 
+  /** Envía un nuevo enlace de confirmación (el anterior caduca o puede haberse usado ya). */
+  async function resend() {
+    if (!supabase || !email) return setError("Escribe tu email arriba para reenviar el correo.");
+    setLoading(true);
+    const { error } = await supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/simulador` } });
+    setLoading(false);
+    if (error) return setError(friendly(error.message));
+    setError("");
+    setNeedsConfirm(false);
+    setInfo("Te enviamos un nuevo correo de confirmación. Ábrelo en este mismo navegador y pulsa el enlace una sola vez.");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!supabase) return;
     setLoading(true);
     setError("");
     setInfo("");
+    setNeedsConfirm(false);
     const origin = window.location.origin;
     try {
       if (mode === "entrar") {
@@ -77,7 +95,9 @@ function LoginInner() {
       if (error) throw error;
       setInfo("Si el email tiene una cuenta, recibirás un enlace para crear una nueva contraseña.");
     } catch (err) {
-      setError(friendly(err instanceof Error ? err.message : "No se pudo completar la operación."));
+      const message = err instanceof Error ? err.message : "No se pudo completar la operación.";
+      setNeedsConfirm(/email not confirmed/i.test(message));
+      setError(friendly(message));
     } finally {
       setLoading(false);
     }
@@ -134,6 +154,11 @@ function LoginInner() {
           </label>
         )}
         {error && <p className="rounded-lg bg-bad-soft px-3 py-2 text-xs text-bad">{error}</p>}
+        {needsConfirm && (
+          <button type="button" onClick={resend} disabled={loading} className="text-xs font-medium text-primary-text hover:underline">
+            Reenviar correo de confirmación
+          </button>
+        )}
         {info && <p className="rounded-lg bg-good-soft px-3 py-2 text-xs text-good">{info}</p>}
         <Button variant="primary" type="submit" disabled={loading} className="h-10 w-full">
           {loading && <Loader2 className="size-4 animate-spin" />}
