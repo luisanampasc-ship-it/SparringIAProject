@@ -2,9 +2,10 @@
 
 import { Check, Clock, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-state";
 import { PersonaDetails } from "@/components/persona-details";
+import { VideoCallView } from "@/components/simulator/video-call";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Badge, Button, Modal } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
@@ -618,6 +619,14 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     }, 2200);
   }
 
+  /** Volumen de la voz del prospecto (0-1) para animar la cara en la videollamada. */
+  const prospectLevel = useCallback(() => {
+    if (convo.current) return convo.current.getOutputVolume();
+    // Modo demo: la voz del navegador no expone su volumen, así que simulamos el habla.
+    const t = performance.now() / 1000;
+    return 0.25 + 0.25 * Math.abs(Math.sin(t * 11)) + 0.15 * Math.abs(Math.sin(t * 17));
+  }, []);
+
   const mm = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const status = turn === "prospect" ? "Hablando…" : turn === "thinking" ? "Pensando su respuesta…" : repTalking ? "Te está escuchando…" : "Tu turno: habla cuando quieras";
 
@@ -651,7 +660,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       )}
 
       {phase === "live" && (
-        <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+        <div className={cn("flex w-full flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl", config.callType === "videollamada" ? "max-w-2xl" : "max-w-md")}>
           <div className="flex w-full items-center justify-between text-xs">
             <p className="font-medium text-good">
               ● En llamada · {mm}
@@ -663,12 +672,20 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
               Límite: {Math.floor(Math.max(0, remainingSec) / 60)}:{String(Math.max(0, remainingSec) % 60).padStart(2, "0")} restantes
             </p>
           </div>
-          <div className="relative my-8">
-            {turn === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
-            <PersonaAvatar persona={persona} className="relative size-28" />
-          </div>
-          <p className="font-semibold text-text">{persona.name}</p>
-          <p className="text-xs text-muted">{status}</p>
+          {config.callType === "videollamada" ? (
+            <div className="my-4 w-full">
+              <VideoCallView persona={persona} speaking={turn === "prospect"} getLevel={prospectLevel} status={status} />
+            </div>
+          ) : (
+            <>
+              <div className="relative my-8">
+                {turn === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
+                <PersonaAvatar persona={persona} className="relative size-28" />
+              </div>
+              <p className="font-semibold text-text">{persona.name}</p>
+              <p className="text-xs text-muted">{status}</p>
+            </>
+          )}
           <div className="mt-4 flex h-6 items-end gap-0.5" aria-label="Nivel de tu micrófono">
             {Array.from({ length: 16 }, (_, i) => (
               <span key={i} className={cn("w-1 rounded-full transition-all", repTalking ? "bg-primary" : "bg-faint")} style={{ height: `${muted ? 2 : Math.max(2, Math.min(24, level * 24 * (0.5 + Math.abs(Math.sin(i + seconds)))))}px` }} />

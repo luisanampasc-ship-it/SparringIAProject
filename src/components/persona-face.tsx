@@ -21,7 +21,11 @@ function hash(str: string) {
 // Peinados: 0 corto, 1 largo, 2 moño, 3 rizado, 4 rapado.
 const STYLES: Record<Gender | "any", number[]> = { femenino: [1, 2, 3, 1], masculino: [0, 3, 4, 0], any: [0, 1, 2, 3, 4] };
 
-export function Face({ seed, gender, className }: { seed: string; gender?: Gender; className?: string }) {
+/**
+ * `mouth` (0-1) abre la boca y `blink` cierra los ojos: sirven para animar la cara mientras
+ * el prospecto habla en la videollamada.
+ */
+export function Face({ seed, gender, className, mouth = 0, blink = false }: { seed: string; gender?: Gender; className?: string; mouth?: number; blink?: boolean }) {
   const h = hash(seed);
   const pickN = <T,>(xs: T[], shift: number) => xs[(h >>> shift) % xs.length];
   const skin = pickN(SKIN, 0);
@@ -64,10 +68,20 @@ export function Face({ seed, gender, className }: { seed: string; gender?: Gende
       {beard && <path d="M22 32c1 8 5 11 10 11s9-3 10-11c-2 3-5 4-10 4s-8-1-10-4z" fill={hair} />}
       {/* cara */}
       <path d="M25.5 24.5h4M34.5 24.5h4" stroke={hair} strokeWidth="1.4" strokeLinecap="round" />
-      <circle cx="27.5" cy="28" r="1.4" fill="#1d1f27" />
-      <circle cx="36.5" cy="28" r="1.4" fill="#1d1f27" />
+      {blink ? (
+        <path d="M26 28h3M35 28h3" stroke="#1d1f27" strokeWidth="1.2" strokeLinecap="round" />
+      ) : (
+        <>
+          <circle cx="27.5" cy="28" r="1.4" fill="#1d1f27" />
+          <circle cx="36.5" cy="28" r="1.4" fill="#1d1f27" />
+        </>
+      )}
       <path d="M32 29.5l-1 4h2" fill="none" stroke="#000000" strokeOpacity=".2" strokeWidth="1" strokeLinecap="round" />
-      <path d="M28.5 36c2 1.8 5 1.8 7 0" fill="none" stroke="#7a3b2e" strokeWidth="1.4" strokeLinecap="round" />
+      {mouth > 0.08 ? (
+        <ellipse cx="32" cy={36.4 + mouth} rx={2.6 + mouth} ry={0.6 + mouth * 2.2} fill="#5a2620" stroke="#7a3b2e" strokeWidth="0.8" />
+      ) : (
+        <path d="M28.5 36c2 1.8 5 1.8 7 0" fill="none" stroke="#7a3b2e" strokeWidth="1.4" strokeLinecap="round" />
+      )}
       {glasses && (
         <g fill="none" stroke="#292d3a" strokeWidth="1.2">
           <circle cx="27.5" cy="28" r="3.6" />
