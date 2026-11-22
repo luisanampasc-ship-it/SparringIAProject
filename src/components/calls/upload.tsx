@@ -18,7 +18,7 @@ const TYPE_OPTS: { value: CallType; label: string }[] = [
 ];
 
 export function UploadPanel({ onCreated }: { onCreated: (id: string) => void }) {
-  const { addSession, updateSession, spendCredits, pushNotification, toast, rubrics, credits } = useApp();
+  const { addSession, updateSession, spendCredits, pushNotification, toast, rubrics, credits, uploadRecording } = useApp();
   const [audioType, setAudioType] = useState<CallType>("videollamada");
   const [textType, setTextType] = useState<CallType>("videollamada");
   const [text, setText] = useState("");
@@ -27,18 +27,20 @@ export function UploadPanel({ onCreated }: { onCreated: (id: string) => void }) 
   const [prospect, setProspect] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
-  function start(opts: { callType: CallType; hasAudio: boolean; audioUrl?: string; name: string; minutes: number }) {
+  function start(opts: { callType: CallType; hasAudio: boolean; audioUrl?: string; file?: File; name: string; minutes: number }) {
     if (credits < opts.minutes) {
       toast("No tienes créditos suficientes para analizar esta llamada");
       return;
     }
-    const id = `u${Date.now()}`;
+    const id = `u-${crypto.randomUUID()}`;
     const placeholder: Session = {
       ...simulateAnalyzedSession({ id, type: "real", callType: opts.callType, prospectName: opts.name, repId, hasAudio: opts.hasAudio, audioUrl: opts.audioUrl, rubrics }),
       status: "procesando",
       score: 0,
     };
     addSession(placeholder);
+    // Con Supabase, el audio se guarda en Storage para poder escucharlo después de recargar.
+    if (opts.file) uploadRecording(id, opts.file).then((path) => path && updateSession(id, { audioPath: path }));
     spendCredits(opts.minutes);
     onCreated(id);
     toast("Analizando la llamada… te avisaremos cuando esté lista");
@@ -59,9 +61,9 @@ export function UploadPanel({ onCreated }: { onCreated: (id: string) => void }) 
     const audio = new Audio(url);
     audio.addEventListener("loadedmetadata", () => {
       const minutes = Math.max(1, Math.ceil((audio.duration || 60) / 60));
-      start({ callType: audioType, hasAudio: true, audioUrl: url, name: prospect || file.name.replace(/\.[^.]+$/, ""), minutes });
+      start({ callType: audioType, hasAudio: true, audioUrl: url, file, name: prospect || file.name.replace(/\.[^.]+$/, ""), minutes });
     });
-    audio.addEventListener("error", () => start({ callType: audioType, hasAudio: true, audioUrl: url, name: prospect || file.name, minutes: 5 }));
+    audio.addEventListener("error", () => start({ callType: audioType, hasAudio: true, audioUrl: url, file, name: prospect || file.name, minutes: 5 }));
   }
 
   return (

@@ -200,7 +200,7 @@ function createRecognition(): Recognition | null {
 
 /** Pantalla de pre-llamada + llamada en vivo (modo demo). */
 export function CallScreen({ persona, config, onExit }: { persona: Persona; config: { difficulty: Difficulty; callType: CallType }; onExit: () => void }) {
-  const { spendCredits, addSession, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
+  const { spendCredits, addSession, updateSession, uploadRecording, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
   const router = useRouter();
   const [phase, setPhase] = useState<"ready" | "live" | "ending">("ready");
   const [seconds, setSeconds] = useState(0); // duración total de la llamada
@@ -224,6 +224,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   // Grabación del micrófono del comercial (en modo demo es la única; con ElevenLabs, respaldo).
   const recorder = useRef<MediaRecorder | null>(null);
   const recordedUrl = useRef<string | undefined>(undefined);
+  const recordedBlob = useRef<Blob | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const recognition = useRef<Recognition | null>(null);
   const live = useRef(false);
@@ -584,7 +585,9 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       const rec = new MediaRecorder(s);
       rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       rec.onstop = () => {
-        if (chunks.length) recordedUrl.current = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
+        if (!chunks.length) return;
+        recordedBlob.current = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        recordedUrl.current = URL.createObjectURL(recordedBlob.current);
       };
       rec.start(1000);
       recorder.current = rec;
@@ -614,7 +617,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     setPhase("ending");
     // La sesión registra los minutos de conversación (sin las esperas de la IA).
     const minutes = Math.max(1, Math.ceil(Math.floor(billableMs.current / 1000) / 60));
-    const id = `rp${Date.now()}`;
+    const id = `rp-${crypto.randomUUID()}`;
     const transcript = [...captured.current];
     const transcribed = transcript.some((l) => l.speaker === "rep" && !l.text.startsWith("("));
     const tot = totals.current;
@@ -642,12 +645,15 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           transcribed,
           micAudioUrl: conversationId.current ? recordedUrl.current : undefined,
           audioNote: conversationId.current ? "Grabación completa de la llamada (tú y el prospecto)." : "Grabación de tu micrófono: en modo demo la voz del prospecto no se graba.",
+          conversationId: conversationId.current ?? undefined,
         },
         // Con ElevenLabs, la grabación completa se descarga de su servidor; en modo demo, la del micrófono.
         audioUrl: conversationId.current ? `/api/voice/audio?conversationId=${encodeURIComponent(conversationId.current)}` : recordedUrl.current,
         hasAudio: Boolean(conversationId.current || recordedUrl.current),
       };
       addSession(s);
+      // Con Supabase, la grabación del micrófono se guarda en Storage (respaldo y modo demo).
+      if (recordedBlob.current) uploadRecording(id, recordedBlob.current).then((path) => path && updateSession(id, { audioPath: path }));
       pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });
       router.push(`/llamadas?id=${id}&vista=transcripcion`);
     }, 2200);
