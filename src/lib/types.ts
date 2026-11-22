@@ -143,6 +143,8 @@ export interface Session {
   personaId?: string;
   date: Date;
   durationMin: number;
+  /** Duración real de la llamada en segundos (sesiones del simulador). durationMin es la que cuenta para créditos. */
+  durationSec?: number;
   status: "analizada" | "sin_analisis" | "procesando";
   score: number;
   subScores: Record<RubricKey, number>; // sobre 25

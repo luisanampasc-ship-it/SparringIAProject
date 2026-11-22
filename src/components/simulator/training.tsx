@@ -618,7 +618,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     const transcript = [...captured.current];
     const transcribed = transcript.some((l) => l.speaker === "rep" && !l.text.startsWith("("));
     const tot = totals.current;
-    const callSec = Math.max(1, seconds);
+    // Se mide con el reloj (no con el estado) porque hangUp también se llama desde callbacks antiguos.
+    const callSec = Math.max(1, elapsed());
     setTimeout(() => {
       const base = simulateAnalyzedSession({ id, type: "roleplay", callType: config.callType, prospectName: persona.name, repId: CURRENT_USER.id, hasAudio: true, durationMin: minutes, personaId: persona.id, rubrics });
       // Lo medido en la llamada sustituye a los valores simulados.
@@ -632,6 +633,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         : base.analysis?.tone;
       const s = {
         ...base,
+        durationSec: callSec,
         // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
         transcript,
         analysis: base.analysis ? { ...base.analysis, tone } : null,

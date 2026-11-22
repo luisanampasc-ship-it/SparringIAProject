@@ -100,7 +100,12 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; fall
           onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
           // Las grabaciones del navegador (webm) a veces no informan la duración: se mantiene la de la sesión.
           onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
-          onEnded={() => setPlaying(false)}
+          onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && e.currentTarget.duration > 0 && setDuration(e.currentTarget.duration)}
+          onEnded={() => {
+            setPlaying(false);
+            // Si el archivo no informaba su duración, la barra termina donde terminó el audio.
+            if (audio.current) setDuration(audio.current.currentTime || duration);
+          }}
           onError={onError}
         />
       )}
