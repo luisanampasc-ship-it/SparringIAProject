@@ -2,9 +2,10 @@
 
 import { Check, Clock, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-state";
 import { PersonaDetails } from "@/components/persona-details";
+import { VideoCallView } from "@/components/simulator/video-call";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Badge, Button, Modal } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
@@ -219,6 +220,10 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const convo = useRef<VoiceConversation | null>(null);
   const elevenVoice = useRef("");
   const ended = useRef(false);
+  const conversationId = useRef<string | null>(null);
+  // Grabación del micrófono del comercial (en modo demo es la única; con ElevenLabs, respaldo).
+  const recorder = useRef<MediaRecorder | null>(null);
+  const recordedUrl = useRef<string | undefined>(undefined);
   const stream = useRef<MediaStream | null>(null);
   const recognition = useRef<Recognition | null>(null);
   const live = useRef(false);
@@ -430,6 +435,9 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       conversationToken: session.token,
       connectionType: "webrtc",
       overrides: session.overrides,
+      onConnect: ({ conversationId: id }) => {
+        conversationId.current = id;
+      },
       onModeChange: ({ mode }) => {
         if (mode === "speaking") setTurnBoth("prospect");
         else if (turnRef.current === "prospect") setTurnBoth("rep");
@@ -507,6 +515,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         requestAnimationFrame(loop);
       };
       loop();
+      startRecording(stream.current);
     } catch {
       setMicOk(false);
       toast("No se pudo acceder al micrófono: usa el botón «He terminado» para ceder el turno");
@@ -569,8 +578,24 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     setTimeout(prospectSpeaks, 900);
   }
 
+  function startRecording(s: MediaStream) {
+    try {
+      const chunks: Blob[] = [];
+      const rec = new MediaRecorder(s);
+      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      rec.onstop = () => {
+        if (chunks.length) recordedUrl.current = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
+      };
+      rec.start(1000);
+      recorder.current = rec;
+    } catch {
+      /* el navegador no permite grabar */
+    }
+  }
+
   function hangUp() {
     if (ended.current) return;
+    if (recorder.current?.state === "recording") recorder.current.stop();
     ended.current = true;
     live.current = false;
     convo.current?.endSession().catch(() => undefined);
@@ -593,7 +618,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     const transcript = [...captured.current];
     const transcribed = transcript.some((l) => l.speaker === "rep" && !l.text.startsWith("("));
     const tot = totals.current;
-    const callSec = Math.max(1, seconds);
+    // Se mide con el reloj (no con el estado) porque hangUp también se llama desde callbacks antiguos.
+    const callSec = Math.max(1, elapsed());
     setTimeout(() => {
       const base = simulateAnalyzedSession({ id, type: "roleplay", callType: config.callType, prospectName: persona.name, repId: CURRENT_USER.id, hasAudio: true, durationMin: minutes, personaId: persona.id, rubrics });
       // Lo medido en la llamada sustituye a los valores simulados.
@@ -607,16 +633,33 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         : base.analysis?.tone;
       const s = {
         ...base,
+        durationSec: callSec,
         // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
         transcript,
         analysis: base.analysis ? { ...base.analysis, tone } : null,
-        capture: { prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label, transcribed },
+        capture: {
+          prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label,
+          transcribed,
+          micAudioUrl: conversationId.current ? recordedUrl.current : undefined,
+          audioNote: conversationId.current ? "Grabación completa de la llamada (tú y el prospecto)." : "Grabación de tu micrófono: en modo demo la voz del prospecto no se graba.",
+        },
+        // Con ElevenLabs, la grabación completa se descarga de su servidor; en modo demo, la del micrófono.
+        audioUrl: conversationId.current ? `/api/voice/audio?conversationId=${encodeURIComponent(conversationId.current)}` : recordedUrl.current,
+        hasAudio: Boolean(conversationId.current || recordedUrl.current),
       };
       addSession(s);
       pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });
       router.push(`/llamadas?id=${id}&vista=transcripcion`);
     }, 2200);
   }
+
+  /** Volumen de la voz del prospecto (0-1) para animar la cara en la videollamada. */
+  const prospectLevel = useCallback(() => {
+    if (convo.current) return convo.current.getOutputVolume();
+    // Modo demo: la voz del navegador no expone su volumen, así que simulamos el habla.
+    const t = performance.now() / 1000;
+    return 0.25 + 0.25 * Math.abs(Math.sin(t * 11)) + 0.15 * Math.abs(Math.sin(t * 17));
+  }, []);
 
   const mm = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const status = turn === "prospect" ? "Hablando…" : turn === "thinking" ? "Pensando su respuesta…" : repTalking ? "Te está escuchando…" : "Tu turno: habla cuando quieras";
@@ -651,7 +694,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       )}
 
       {phase === "live" && (
-        <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+        <div className={cn("flex w-full flex-col items-center rounded-2xl border border-border bg-surface p-6 shadow-2xl", config.callType === "videollamada" ? "max-w-2xl" : "max-w-md")}>
           <div className="flex w-full items-center justify-between text-xs">
             <p className="font-medium text-good">
               ● En llamada · {mm}
@@ -663,12 +706,20 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
               Límite: {Math.floor(Math.max(0, remainingSec) / 60)}:{String(Math.max(0, remainingSec) % 60).padStart(2, "0")} restantes
             </p>
           </div>
-          <div className="relative my-8">
-            {turn === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
-            <PersonaAvatar persona={persona} className="relative size-28" />
-          </div>
-          <p className="font-semibold text-text">{persona.name}</p>
-          <p className="text-xs text-muted">{status}</p>
+          {config.callType === "videollamada" ? (
+            <div className="my-4 w-full">
+              <VideoCallView persona={persona} speaking={turn === "prospect"} getLevel={prospectLevel} status={status} />
+            </div>
+          ) : (
+            <>
+              <div className="relative my-8">
+                {turn === "prospect" && <span className="pulse-ring absolute inset-0 rounded-full bg-primary" />}
+                <PersonaAvatar persona={persona} className="relative size-28" />
+              </div>
+              <p className="font-semibold text-text">{persona.name}</p>
+              <p className="text-xs text-muted">{status}</p>
+            </>
+          )}
           <div className="mt-4 flex h-6 items-end gap-0.5" aria-label="Nivel de tu micrófono">
             {Array.from({ length: 16 }, (_, i) => (
               <span key={i} className={cn("w-1 rounded-full transition-all", repTalking ? "bg-primary" : "bg-faint")} style={{ height: `${muted ? 2 : Math.max(2, Math.min(24, level * 24 * (0.5 + Math.abs(Math.sin(i + seconds)))))}px` }} />
