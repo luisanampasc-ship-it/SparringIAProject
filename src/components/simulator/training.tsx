@@ -220,6 +220,10 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const convo = useRef<VoiceConversation | null>(null);
   const elevenVoice = useRef("");
   const ended = useRef(false);
+  const conversationId = useRef<string | null>(null);
+  // Grabación del micrófono del comercial (en modo demo es la única; con ElevenLabs, respaldo).
+  const recorder = useRef<MediaRecorder | null>(null);
+  const recordedUrl = useRef<string | undefined>(undefined);
   const stream = useRef<MediaStream | null>(null);
   const recognition = useRef<Recognition | null>(null);
   const live = useRef(false);
@@ -431,6 +435,9 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       conversationToken: session.token,
       connectionType: "webrtc",
       overrides: session.overrides,
+      onConnect: ({ conversationId: id }) => {
+        conversationId.current = id;
+      },
       onModeChange: ({ mode }) => {
         if (mode === "speaking") setTurnBoth("prospect");
         else if (turnRef.current === "prospect") setTurnBoth("rep");
@@ -508,6 +515,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         requestAnimationFrame(loop);
       };
       loop();
+      startRecording(stream.current);
     } catch {
       setMicOk(false);
       toast("No se pudo acceder al micrófono: usa el botón «He terminado» para ceder el turno");
@@ -570,8 +578,24 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     setTimeout(prospectSpeaks, 900);
   }
 
+  function startRecording(s: MediaStream) {
+    try {
+      const chunks: Blob[] = [];
+      const rec = new MediaRecorder(s);
+      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      rec.onstop = () => {
+        if (chunks.length) recordedUrl.current = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
+      };
+      rec.start(1000);
+      recorder.current = rec;
+    } catch {
+      /* el navegador no permite grabar */
+    }
+  }
+
   function hangUp() {
     if (ended.current) return;
+    if (recorder.current?.state === "recording") recorder.current.stop();
     ended.current = true;
     live.current = false;
     convo.current?.endSession().catch(() => undefined);
@@ -611,7 +635,15 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
         transcript,
         analysis: base.analysis ? { ...base.analysis, tone } : null,
-        capture: { prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label, transcribed },
+        capture: {
+          prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label,
+          transcribed,
+          micAudioUrl: conversationId.current ? recordedUrl.current : undefined,
+          audioNote: conversationId.current ? "Grabación completa de la llamada (tú y el prospecto)." : "Grabación de tu micrófono: en modo demo la voz del prospecto no se graba.",
+        },
+        // Con ElevenLabs, la grabación completa se descarga de su servidor; en modo demo, la del micrófono.
+        audioUrl: conversationId.current ? `/api/voice/audio?conversationId=${encodeURIComponent(conversationId.current)}` : recordedUrl.current,
+        hasAudio: Boolean(conversationId.current || recordedUrl.current),
       };
       addSession(s);
       pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });

@@ -17,8 +17,13 @@ function fmt(s: number) {
  * Reproductor con forma de onda. Si hay audioUrl reproduce el archivo real;
  * si no (datos demo), simula la reproducción con la duración de la sesión.
  */
-export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; durationSec: number; seed: string }>(function WaveformPlayer({ audioUrl, durationSec, seed }, ref) {
+export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; fallbackUrl?: string; note?: string; durationSec: number; seed: string }>(function WaveformPlayer({ audioUrl: primaryUrl, fallbackUrl, note, durationSec, seed }, ref) {
   const audio = useRef<HTMLAudioElement>(null);
+  // Si la grabación principal no carga (p. ej. ElevenLabs aún la procesa), se usa la de respaldo.
+  const [useFallback, setUseFallback] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const audioUrl = useFallback ? fallbackUrl : primaryUrl;
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(durationSec);
@@ -36,6 +41,8 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; dura
     setTime(0);
     setPlaying(false);
     setDuration(durationSec);
+    setUseFallback(false);
+    setFailed(false);
   }, [seed, durationSec]);
 
   useEffect(() => {
@@ -68,22 +75,33 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; dura
   const toggle = () => {
     if (audio.current) {
       if (playing) audio.current.pause();
-      else audio.current.play();
+      else audio.current.play().catch(() => setPlaying(false));
     }
     setPlaying((p) => !p);
+  };
+
+  const onError = () => {
+    setPlaying(false);
+    if (!useFallback && fallbackUrl) setUseFallback(true);
+    else setFailed(true);
   };
 
   const progress = duration ? time / duration : 0;
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+    <div className="rounded-xl border border-border bg-surface px-4 py-3">
+      <div className="flex items-center gap-3">
       {audioUrl && (
         <audio
+          key={`${audioUrl}-${retry}`}
           ref={audio}
-          src={audioUrl}
+          src={retry ? `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}r=${retry}` : audioUrl}
+          preload="metadata"
           onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          // Las grabaciones del navegador (webm) a veces no informan la duración: se mantiene la de la sesión.
+          onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
           onEnded={() => setPlaying(false)}
+          onError={onError}
         />
       )}
       <button onClick={toggle} className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-on-primary" aria-label={playing ? "Pausar" : "Reproducir"}>
@@ -102,6 +120,25 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; dura
         ))}
       </div>
       <span className="w-10 text-right text-xs text-muted tabular-nums">{fmt(duration)}</span>
+      </div>
+      {!audioUrl && <p className="mt-1.5 text-[11px] text-faint">Sin grabación de audio: es una sesión de ejemplo.</p>}
+      {audioUrl && failed && (
+        <p className="mt-1.5 text-[11px] text-warn">
+          La grabación aún no está disponible (puede tardar unos segundos en procesarse).{" "}
+          <button className="font-medium underline" onClick={() => { setFailed(false); setUseFallback(false); setRetry((r) => r + 1); }}>
+            Reintentar
+          </button>
+        </p>
+      )}
+      {audioUrl && !failed && useFallback && (
+        <p className="mt-1.5 text-[11px] text-faint">
+          Mostrando la grabación de tu micrófono (solo tu voz): la grabación completa aún se está procesando.{" "}
+          <button className="font-medium text-primary-text underline" onClick={() => { setUseFallback(false); setRetry((r) => r + 1); }}>
+            Cargar la grabación completa
+          </button>
+        </p>
+      )}
+      {audioUrl && !failed && !useFallback && note && <p className="mt-1.5 text-[11px] text-faint">{note}</p>}
     </div>
   );
 });

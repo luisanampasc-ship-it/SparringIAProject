@@ -158,7 +158,14 @@ export interface Session {
   hasAudio: boolean;
   audioUrl?: string;
   /** Datos capturados en directo en una sesión del simulador. */
-  capture?: { prospectVoice: string; transcribed: boolean };
+  capture?: {
+    prospectVoice: string;
+    transcribed: boolean;
+    /** Grabación de respaldo del micrófono del comercial (solo su voz), si la principal no carga. */
+    micAudioUrl?: string;
+    /** Nota bajo el reproductor (p. ej. "Grabación completa de ElevenLabs"). */
+    audioNote?: string;
+  };
 }
 
 export interface RubricCategory {

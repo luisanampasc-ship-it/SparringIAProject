@@ -123,7 +123,7 @@ export function CallDetail({ session, onBack, initialTab = "resumen" }: { sessio
       )}
 
       <div className="mt-4">
-        <WaveformPlayer ref={player} audioUrl={session.audioUrl} durationSec={session.durationMin * 60} seed={session.id} />
+        <WaveformPlayer ref={player} audioUrl={session.audioUrl} fallbackUrl={session.capture?.micAudioUrl} note={session.capture?.audioNote} durationSec={session.durationMin * 60} seed={session.id} />
         {!session.hasAudio && <p className="mt-1 text-[11px] text-faint">Analizada desde transcripción: sin análisis de tono.</p>}
       </div>
 
