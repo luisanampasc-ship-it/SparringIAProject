@@ -39,6 +39,20 @@ export interface OrgData {
   rubrics: Rubrics | null;
 }
 
+/** Error de configuración que se muestra a la persona usuaria en lugar de la app. */
+export class SetupError extends Error {}
+
+function describeError(e: { message?: string; code?: string }) {
+  const msg = e.message ?? String(e);
+  if (e.code === "42P01" || e.code === "PGRST205" || /does not exist|could not find the table/i.test(msg)) {
+    return "Faltan las tablas en Supabase: ejecuta el script supabase/migrations/0001_init.sql en el SQL Editor y recarga la página.";
+  }
+  if (e.code === "42501" || /permission denied/i.test(msg)) {
+    return "Supabase denegó el acceso a los datos (permisos). Vuelve a ejecutar el script supabase/migrations/0001_init.sql y recarga.";
+  }
+  return `No se pudieron cargar los datos de Supabase: ${msg}`;
+}
+
 export function initials(name: string) {
   return name
     .split(/\s+/)
@@ -83,8 +97,8 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
   const user = auth.user;
   if (!user) return null;
   const { data: me, error } = await sb.from("members").select("*").eq("user_id", user.id).maybeSingle();
-  if (error) throw error;
-  if (!me) return null;
+  if (error) throw new SetupError(describeError(error));
+  if (!me) throw new SetupError("Tu usuario no tiene organización. Suele pasar si se creó antes de ejecutar el script de las tablas: ejecuta en Supabase el script supabase/migrations/0002_backfill_members.sql y recarga.");
   const orgId = (me as MemberRow).org_id;
 
   const [org, members, invites, personas, sessions, notes] = await Promise.all([
@@ -95,7 +109,7 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
     sb.from("sessions").select("data").eq("org_id", orgId).order("started_at", { ascending: false }).limit(1000),
     sb.from("session_notes").select("session_id,text").eq("org_id", orgId),
   ]);
-  for (const r of [org, members, personas, sessions, notes]) if (r.error) throw r.error;
+  for (const r of [org, members, personas, sessions, notes]) if (r.error) throw new SetupError(describeError(r.error));
 
   const sessionList = (sessions.data ?? []).map((r) => reviveSession(r.data));
   await attachRecordingUrls(sb, sessionList);

@@ -8,6 +8,7 @@ import {
 import { useApp } from "@/components/app-state";
 import { CURRENT_USER } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
+import { supabaseConfigured } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -56,7 +57,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <Logo />
           <div className="leading-tight">
             <p className="text-sm font-semibold text-white">Sparring IA</p>
-            <p className="max-w-36 truncate text-[11px] text-sidebar-text/70">{account ? account.orgName : "Modo demo"}</p>
+            <p className="max-w-36 truncate text-[11px] text-sidebar-text/70">{account ? account.orgName : supabaseConfigured ? "Cargando…" : "Modo demo"}</p>
           </div>
           <button className="ml-auto rounded p-1 lg:hidden" onClick={onClose} aria-label="Cerrar menú">
             <X className="size-4" />

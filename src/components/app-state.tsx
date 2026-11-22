@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_MINUTE_LIMITS, DEFAULT_RUBRICS, PERSONAS, setRoster } from "@/lib/catalog";
 import { getSupabase } from "@/lib/supabase/client";
-import { loadOrgData, memberToRep, sessionRow, uploadRecording, type InviteRow, type MemberRow } from "@/lib/supabase/data";
+import { loadOrgData, memberToRep, SetupError, sessionRow, uploadRecording, type InviteRow, type MemberRow } from "@/lib/supabase/data";
 import { generateDemoData, recomputeScore } from "@/lib/demo-data";
 import type { AppNotification, MyOffer, Outcome, Persona, Role, Rubrics, Session } from "@/lib/types";
 
@@ -34,6 +34,8 @@ export interface Toast {
 
 interface AppState {
   ready: boolean;
+  /** Mensaje si no se pudieron cargar los datos (p. ej. falta ejecutar el script de Supabase). */
+  loadError: string | null;
   /** "demo": datos de ejemplo en el navegador. "supabase": datos reales con inicio de sesión. */
   mode: "demo" | "supabase";
   account: Account | null;
@@ -108,6 +110,7 @@ function saveLocal(key: string, value: unknown) {
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"demo" | "supabase">("demo");
   const [account, setAccount] = useState<Account | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -203,7 +206,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         console.error(e);
-        toast("No se pudieron cargar los datos. Revisa la conexión con Supabase.");
+        setLoadError(e instanceof SetupError ? e.message : "No se pudieron cargar los datos. Revisa tu conexión y recarga la página.");
       });
   }, [toast]);
 
@@ -221,7 +224,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer,
+      ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer,
       setRange,
       setMyOffer: (o) => {
         setMyOfferState(o);
@@ -328,7 +331,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       toast,
     }),
-    [ready, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
+    [ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
