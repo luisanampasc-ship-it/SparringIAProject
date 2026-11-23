@@ -18,6 +18,9 @@ export interface Account {
   role: Role;
 }
 
+/** Minutos incluidos en el plan (hasta conectar Stripe y los planes reales). */
+export const PLAN_MINUTES = 300;
+
 export const DEFAULT_OFFER: MyOffer = { company: "Mi empresa", product: "Programa de formación en ventas consultivas para equipos comerciales" };
 
 export type RangePreset = "1W" | "1M" | "3M" | "6M" | "YTD" | "custom";
@@ -53,6 +56,10 @@ interface AppState {
   rubrics: Rubrics;
   notifications: AppNotification[];
   credits: number;
+  /** Minutos incluidos en el plan de la organización cada mes. */
+  planMinutes: number;
+  /** Texto de renovación de los créditos (p. ej. "el día 1 de cada mes"). */
+  creditsRenewal: string;
   range: DateRange;
   toasts: Toast[];
   notes: Record<string, string>;
@@ -120,6 +127,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [rubrics, setRubrics] = useState<Rubrics>(DEFAULT_RUBRICS);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [credits, setCredits] = useState(217);
+  // Con Supabase: minutos consumidos por toda la organización este mes (simulaciones y llamadas subidas).
+  const [orgUsed, setOrgUsed] = useState(0);
+  const usageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [range, setRange] = useState<DateRange>(() => presetRange("1M", new Date(0)));
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -210,6 +220,23 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       });
   }, [toast]);
 
+  // Recalcula el saldo cuando cambian las sesiones (con una pequeña espera para agrupar cambios).
+  useEffect(() => {
+    if (mode !== "supabase") return;
+    const sb = getSupabase();
+    if (!sb) return;
+    if (usageTimer.current) clearTimeout(usageTimer.current);
+    usageTimer.current = setTimeout(async () => {
+      const { data, error } = await sb.rpc("org_minutes_used");
+      if (!error && typeof data === "number") return setOrgUsed(data);
+      // Sin la función 0003 en la base de datos: se calcula con las sesiones visibles.
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      setOrgUsed(sessionsRef.current.filter((s) => s.date >= monthStart).reduce((a, s) => a + s.durationMin, 0));
+    }, 1500);
+  }, [mode, sessions]);
+
   const updateSession = useCallback(
     (id: string, patch: Partial<Session>) => {
       const current = sessionsRef.current.find((s) => s.id === id);
@@ -224,7 +251,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer,
+      ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, range,
+      credits: mode === "supabase" ? Math.max(0, PLAN_MINUTES - orgUsed) : credits,
+      planMinutes: PLAN_MINUTES,
+      creditsRenewal: mode === "supabase" ? "el día 1 de cada mes" : "el día 24", toasts, notes, minuteLimits, myOffer,
       setRange,
       setMyOffer: (o) => {
         setMyOfferState(o);
@@ -316,6 +346,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, archived: !n.archived } : n))),
       pushNotification: (n) =>
         setNotifications((ns) => [{ ...n, id: `n${Date.now()}`, date: new Date(), archived: false }, ...ns]),
+      // Con Supabase el saldo se calcula a partir de las sesiones guardadas.
       spendCredits: (min) => setCredits((c) => Math.max(0, c - min)),
       setNote: (id, text) => {
         setNotes((prev) => {
@@ -331,7 +362,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       toast,
     }),
-    [ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, range, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
+    [ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, orgUsed, range, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -39,8 +39,8 @@ export const NAV_ITEMS = GROUPS.flatMap((g) => g.items);
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
-  const { credits, sessions, minuteLimits, account, signOut } = useApp();
-  const total = 300;
+  const { credits, planMinutes, creditsRenewal, sessions, minuteLimits, account, signOut } = useApp();
+  const total = planMinutes;
   const myLimit = minuteLimits[CURRENT_USER.id] ?? 0;
   const myUsed = minutesUsedThisMonth(sessions, CURRENT_USER.id);
 
@@ -109,7 +109,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-primary" style={{ width: `${(credits / total) * 100}%` }} />
           </div>
-          <p className="mt-1.5 text-[11px] text-sidebar-text/60">Se renueva el día 24</p>
+          <p className="mt-1.5 text-[11px] text-sidebar-text/60">Se renueva {creditsRenewal}</p>
           <div className="mt-2.5 flex justify-between border-t border-white/10 pt-2 text-xs">
             <span>Tu límite mensual</span>
             <span className={cn("font-semibold", myUsed >= myLimit ? "text-bad" : "text-white")}>

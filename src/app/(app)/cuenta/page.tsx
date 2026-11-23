@@ -8,7 +8,7 @@ import { CURRENT_USER } from "@/lib/catalog";
 const input = "mt-1 h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
 
 export default function CuentaPage() {
-  const { credits, sessions, toast, myOffer, setMyOffer } = useApp();
+  const { credits, planMinutes, creditsRenewal, sessions, toast, myOffer, setMyOffer } = useApp();
   const [offer, setOffer] = useState(myOffer);
   const [name, setName] = useState(CURRENT_USER.name);
   const [org, setOrg] = useState("Sparring IA");
@@ -36,15 +36,15 @@ export default function CuentaPage() {
             <label className="block text-xs text-muted">Nombre de la organización<input className={input} value={org} onChange={(e) => setOrg(e.target.value)} /></label>
             <div className="rounded-lg border border-primary/30 bg-primary-soft/40 p-4">
               <p className="text-sm font-semibold text-text">Plan Equipo</p>
-              <p className="text-xs text-muted">300 minutos de análisis al mes · hasta 10 miembros</p>
+              <p className="text-xs text-muted">{planMinutes} minutos al mes (simulador y análisis) · hasta 10 miembros</p>
             </div>
             <div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted">Créditos disponibles</span>
-                <span className="font-semibold text-text">{credits} / 300 min</span>
+                <span className="font-semibold text-text">{credits} / {planMinutes} min</span>
               </div>
-              <ProgressBar value={credits} max={300} tone="primary" className="mt-1.5" />
-              <p className="mt-1 text-[11px] text-faint">Se renuevan el día 24 de cada mes.</p>
+              <ProgressBar value={credits} max={planMinutes} tone="primary" className="mt-1.5" />
+              <p className="mt-1 text-[11px] text-faint">Se renuevan {creditsRenewal.replace(" de cada mes", "")} de cada mes.</p>
             </div>
             <Button onClick={() => toast("Conecta Stripe para habilitar compras (ver README)")}>Comprar más minutos</Button>
           </div>
