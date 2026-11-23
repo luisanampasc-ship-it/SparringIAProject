@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  GraduationCap, LayoutDashboard, Mic, Phone, Plug, Settings, ClipboardList, Users, X,
+  GraduationCap, LayoutDashboard, LogOut, Mic, Phone, Plug, Settings, ClipboardList, Users, X,
 } from "lucide-react";
 import { useApp } from "@/components/app-state";
 import { CURRENT_USER } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
+import { supabaseConfigured } from "@/lib/supabase/config";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 
@@ -32,12 +33,14 @@ const GROUPS = [
   },
 ];
 
+const ROLE_LABEL = { admin: "Administrador", manager: "Manager", comercial: "Comercial" } as const;
+
 export const NAV_ITEMS = GROUPS.flatMap((g) => g.items);
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
-  const { credits, sessions, minuteLimits } = useApp();
-  const total = 300;
+  const { credits, planMinutes, creditsRenewal, sessions, minuteLimits, account, signOut } = useApp();
+  const total = planMinutes;
   const myLimit = minuteLimits[CURRENT_USER.id] ?? 0;
   const myUsed = minutesUsedThisMonth(sessions, CURRENT_USER.id);
 
@@ -54,7 +57,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <Logo />
           <div className="leading-tight">
             <p className="text-sm font-semibold text-white">Sparring IA</p>
-            <p className="text-[11px] text-sidebar-text/70">Administrador</p>
+            <p className="max-w-36 truncate text-[11px] text-sidebar-text/70">{account ? account.orgName : supabaseConfigured ? "Cargando…" : "Modo demo"}</p>
           </div>
           <button className="ml-auto rounded p-1 lg:hidden" onClick={onClose} aria-label="Cerrar menú">
             <X className="size-4" />
@@ -106,7 +109,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-primary" style={{ width: `${(credits / total) * 100}%` }} />
           </div>
-          <p className="mt-1.5 text-[11px] text-sidebar-text/60">Se renueva el día 24</p>
+          <p className="mt-1.5 text-[11px] text-sidebar-text/60">Se renueva {creditsRenewal}</p>
           <div className="mt-2.5 flex justify-between border-t border-white/10 pt-2 text-xs">
             <span>Tu límite mensual</span>
             <span className={cn("font-semibold", myUsed >= myLimit ? "text-bad" : "text-white")}>
@@ -115,10 +118,20 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
         </div>
 
-        <Link href="/cuenta" onClick={onClose} className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 hover:bg-white/5">
-          <span className="grid size-7 place-items-center rounded-full bg-primary text-[11px] font-semibold text-on-primary">{CURRENT_USER.initials}</span>
-          <span className="text-sm font-medium text-white">{CURRENT_USER.name}</span>
+        <div className="flex items-center border-t border-white/10">
+        <Link href="/cuenta" onClick={onClose} className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3 hover:bg-white/5">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-on-primary">{CURRENT_USER.initials}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-white">{CURRENT_USER.name}</span>
+            <span className="block text-[10px] text-sidebar-text/60 capitalize">{account ? ROLE_LABEL[account.role] : "Demo"}</span>
+          </span>
         </Link>
+        {account && (
+          <button onClick={() => signOut()} className="mr-2 rounded-md p-2 text-sidebar-text/70 hover:bg-white/5 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión">
+            <LogOut className="size-4" />
+          </button>
+        )}
+        </div>
       </aside>
     </>
   );

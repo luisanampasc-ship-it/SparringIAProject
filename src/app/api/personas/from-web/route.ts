@@ -4,6 +4,7 @@ import { z } from "zod";
 import { detectGender, detectSector, pickName } from "@/lib/persona-generator";
 import { buyerFor, detectSize, objectionsFor, personalityFor, productsFrom, SIZE_LABEL } from "@/lib/sales-context";
 import type { Gender } from "@/lib/types";
+import { requireUser } from "@/lib/supabase/guard";
 import { scrapeSite, ScrapeError, type ScrapedSite } from "@/lib/web-scrape";
 
 /**
@@ -152,6 +153,9 @@ function genderRole(role: string, gender: Gender) {
 const DECISION = /(ceo|gerente|director|fundador|founder|owner|propietari|presidente|socio|head of sales|managing)/i;
 
 export async function POST(req: Request) {
+  // Con Supabase, solo usuarios con sesión (la lectura con IA tiene coste).
+  const auth = await requireUser();
+  if (auth instanceof Response) return auth;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Datos no válidos." }, { status: 400 });
   const { url, kind, contactName, contactRole } = parsed.data;

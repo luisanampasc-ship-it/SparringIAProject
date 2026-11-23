@@ -97,7 +97,7 @@ function SimuladorInner() {
                       <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-text hover:bg-surface-2" onClick={() => { setConfigFor(p); close(); }}>
                         <Pencil className="size-3" /> Ver / editar
                       </button>
-                      <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-text hover:bg-surface-2" onClick={() => { addPersona({ ...p, id: `p${Date.now()}`, name: `${p.name} (copia)` }); toast("Prospecto duplicado"); close(); }}>
+                      <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-text hover:bg-surface-2" onClick={() => { addPersona({ ...p, id: `p-${crypto.randomUUID()}`, name: `${p.name} (copia)` }); toast("Prospecto duplicado"); close(); }}>
                         <Copy className="size-3" /> Duplicar
                       </button>
                       <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-bad hover:bg-bad-soft" onClick={() => { removePersona(p.id); toast("Prospecto eliminado"); close(); }}>

@@ -2,7 +2,7 @@
 
 Plataforma de entrenamiento comercial con IA: analiza llamadas de venta reales, puntúa a cada comercial con una rúbrica configurable, da feedback accionable y permite practicar con prospectos de IA por voz.
 
-> **Estado actual: v0.1 — UI completa con datos demo.** Todas las pantallas funcionan en el navegador con datos de ejemplo generados en el cliente. El siguiente paso es conectar Supabase (auth, base de datos y storage) y los proveedores de IA (ver [Hoja de ruta](#hoja-de-ruta)).
+> **Estado actual:** sin variables de entorno, todas las pantallas funcionan en modo demo con datos de ejemplo. Con Supabase, ElevenLabs y Claude configurados se activan los usuarios y datos reales, la voz real del simulador y la lectura de webs con IA (ver [Hoja de ruta](#hoja-de-ruta)).
 
 ## Funcionalidades
 
@@ -72,7 +72,13 @@ src/
 
 Los puntos donde hoy hay simulación están marcados en el código con comentarios `En producción…`.
 
-1. **Supabase**: auth (email + Google), tablas `organizations`, `members`, `sessions`, `objections`, `skill_detections`, `key_moments`, `personas`, `rubrics`, `notifications`; Storage para audios; RLS por organización (los comerciales ven solo lo suyo).
+1. **Supabase** (Fase A integrada; se activa con `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`):
+   - Esquema en `supabase/migrations/0001_init.sql`: `organizations`, `members`, `invites`, `personas`, `sessions` (sesión completa en JSON), `session_notes` y el bucket privado `recordings`.
+   - Seguridad por filas (RLS): cada organización solo ve lo suyo; los comerciales ven sus sesiones y admin/manager todas; solo el admin cambia roles y límites de minutos.
+   - Alta: email y contraseña (`/login`). Quien se registra crea su organización y queda como admin; los invitados (`/api/team/invite`, desde Equipo) se unen a la organización que los invitó.
+   - Carga y guardado en `src/components/app-state.tsx` + `src/lib/supabase/data.ts`; el middleware (`src/middleware.ts`) refresca la sesión y envía al login.
+   - Las rutas de API exigen sesión y `/api/voice/session` calcula el límite de minutos en el servidor.
+   - Pendiente (Fase B): Google, correos personalizados (SMTP propio), varias organizaciones por usuario y migrar créditos/notificaciones.
 2. **Pipeline de análisis** (`/api/analyze`): transcripción con diarización (OpenAI `gpt-4o-transcribe`, AssemblyAI o Deepgram) → métricas de tono → LLM con salida JSON validada con Zod usando la rúbrica de la organización → guardar como nueva versión → notificación. Reemplaza `simulateAnalyzedSession` en `src/lib/demo-data.ts`.
 3. **Simulador de voz con ElevenLabs Agents** (ya integrado, se activa con `ELEVENLABS_API_KEY`):
    - `/api/voice/session` (servidor) crea o reutiliza el agente "Sparring IA · Prospecto" con permiso para que cada llamada envíe su guion, primer mensaje, idioma y voz; elige una voz con acento peruano según el sexo del prospecto (o las de `ELEVENLABS_VOICE_FEMALE` / `ELEVENLABS_VOICE_MALE`) y devuelve un token temporal de WebRTC. La clave nunca llega al navegador.

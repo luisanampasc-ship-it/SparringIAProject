@@ -27,12 +27,25 @@ export const OUTCOMES = [
   { id: "seguimiento", label: "Seguimiento", dot: "bg-warn", badge: "bg-warn-soft text-warn" },
 ] as const;
 
-export const REPS: Rep[] = [
+/*
+ * Equipo actual. En modo demo son dos comerciales de ejemplo; con Supabase, AppStateProvider
+ * los sustituye por los miembros reales de la organización (setRoster) antes de mostrar la app.
+ * Se exportan con `let` para que todos los módulos vean el valor actualizado.
+ */
+/** Comerciales de ejemplo del modo demo (también los usa el generador de datos de ejemplo). */
+export const DEMO_REPS: Rep[] = [
   { id: "r1", name: "Andrea Ríos", initials: "AR", role: "admin", email: "andrea@sparring.demo", active: true },
   { id: "r2", name: "Óscar Salinas", initials: "OS", role: "comercial", email: "oscar@sparring.demo", active: true },
 ];
 
-export const CURRENT_USER = REPS[0];
+export let REPS: Rep[] = DEMO_REPS;
+
+export let CURRENT_USER: Rep = REPS[0];
+
+export function setRoster(reps: Rep[], current: Rep) {
+  REPS = reps;
+  CURRENT_USER = current;
+}
 
 /** Minutos de simulador al mes que puede usar cada colaborador (editable en Equipo). */
 export const DEFAULT_MINUTE_LIMITS: Record<string, number> = { r1: 900, r2: 400 };

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { elevenLabsEnabled, getAgentId, getConversationToken, getVoice } from "@/lib/elevenlabs";
 import { buildProspectPrompt } from "@/lib/prospect-prompt";
+import { remainingMinutes, requireUser } from "@/lib/supabase/guard";
 import type { Persona } from "@/lib/types";
 
 /**
@@ -37,16 +38,20 @@ const Body = z.object({
   }),
   difficulty: z.enum(["facil", "medio", "dificil"]),
   callType: z.enum(["cold_call", "cualificacion", "videollamada"]),
-  // En producción el límite se lee de la base de datos; aquí lo envía el cliente.
+  // En modo demo lo envía el cliente; con Supabase se calcula en el servidor.
   remainingMinutes: z.number().min(0).max(100000),
 });
 
 export async function POST(req: Request) {
   if (!elevenLabsEnabled()) return Response.json({ enabled: false }, { status: 501 });
+  const auth = await requireUser();
+  if (auth instanceof Response) return auth;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Datos no válidos." }, { status: 400 });
-  const { difficulty, callType, remainingMinutes } = parsed.data;
-  if (remainingMinutes <= 0) return Response.json({ error: "Has alcanzado tu límite mensual de minutos." }, { status: 403 });
+  const { difficulty, callType } = parsed.data;
+  // Con Supabase, el límite se calcula en el servidor con los datos reales (no se confía en el navegador).
+  const remaining = auth ? await remainingMinutes(auth.supabase, auth.user.id) : parsed.data.remainingMinutes;
+  if (remaining <= 0) return Response.json({ error: "Has alcanzado tu límite mensual de minutos." }, { status: 403 });
 
   const persona = parsed.data.persona as unknown as Persona;
   const { prompt, firstMessage } = buildProspectPrompt(persona, difficulty, callType);

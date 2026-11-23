@@ -159,6 +159,8 @@ export interface Session {
   versions: number;
   hasAudio: boolean;
   audioUrl?: string;
+  /** Ruta de la grabación en Supabase Storage (bucket "recordings"). */
+  audioPath?: string;
   /** Datos capturados en directo en una sesión del simulador. */
   capture?: {
     prospectVoice: string;
@@ -167,6 +169,8 @@ export interface Session {
     micAudioUrl?: string;
     /** Nota bajo el reproductor (p. ej. "Grabación completa de ElevenLabs"). */
     audioNote?: string;
+    /** Id de la conversación en ElevenLabs (para descargar su grabación). */
+    conversationId?: string;
   };
 }
 

@@ -20,14 +20,29 @@ function Toasts() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const [menu, setMenu] = useState(false);
-  const { ready } = useApp();
+  const { ready, loadError, signOut } = useApp();
   return (
     <div className="flex min-h-screen">
       <Sidebar open={menu} onClose={() => setMenu(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setMenu(true)} />
         <main className="flex-1">
-          {ready ? (
+          {loadError ? (
+            <div className="mx-auto max-w-xl p-6">
+              <div className="rounded-xl border border-bad/30 bg-bad-soft p-5">
+                <p className="font-semibold text-bad">No se pudieron cargar tus datos</p>
+                <p className="mt-2 text-sm text-text">{loadError}</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => window.location.reload()} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary">
+                    Recargar
+                  </button>
+                  <button onClick={() => signOut()} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text">
+                    Cerrar sesión
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : ready ? (
             children
           ) : (
             <div className="space-y-4 p-6">

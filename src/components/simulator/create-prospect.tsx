@@ -15,7 +15,7 @@ const input = "mt-1 h-9 w-full rounded-lg border border-border bg-surface px-3 t
 const area = "mt-1 w-full resize-y rounded-lg border border-border bg-surface p-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
 
 function blank(): Persona {
-  return { id: `p${Date.now()}`, gender: "femenino", name: "", role: "", company: "", sector: "", tags: [], segment: "B2B", description: "", personality: "", objections: [], createdBy: CURRENT_USER.id };
+  return { id: `p-${crypto.randomUUID()}`, gender: "femenino", name: "", role: "", company: "", sector: "", tags: [], segment: "B2B", description: "", personality: "", objections: [], createdBy: CURRENT_USER.id };
 }
 
 export function CreateProspectMenu() {
