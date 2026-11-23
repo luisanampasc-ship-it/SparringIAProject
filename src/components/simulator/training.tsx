@@ -624,6 +624,8 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     // Se mide con el reloj (no con el estado) porque hangUp también se llama desde callbacks antiguos.
     const callSec = Math.max(1, elapsed());
     setTimeout(() => {
+      // Si algo falla al preparar la sesión, se avisa y se cierra la pantalla (nunca queda bloqueada).
+      try {
       const base = simulateAnalyzedSession({ id, type: "roleplay", callType: config.callType, prospectName: persona.name, repId: CURRENT_USER.id, hasAudio: true, durationMin: minutes, personaId: persona.id, rubrics });
       // Lo medido en la llamada sustituye a los valores simulados.
       const tone = base.analysis?.tone && tot.levelFrames
@@ -656,6 +658,11 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       if (recordedBlob.current) uploadRecording(id, recordedBlob.current).then((path) => path && updateSession(id, { audioPath: path }));
       pushNotification({ title: `Análisis de ${persona.name} listo`, body: `Puntuación: ${s.score}/100. Pulsa para ver la transcripción y el análisis.`, sessionId: id });
       router.push(`/llamadas?id=${id}&vista=transcripcion`);
+      } catch (e) {
+        console.error("No se pudo guardar la sesión", e);
+        toast("No se pudo preparar el análisis de la llamada. Inténtalo de nuevo.");
+        onExit();
+      }
     }, 2200);
   }
 

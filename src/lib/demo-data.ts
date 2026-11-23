@@ -1,4 +1,4 @@
-import { DEFAULT_RUBRICS, OBJECTION_CATEGORIES, PERSONAS, REPS, SKILLS } from "./catalog";
+import { DEFAULT_RUBRICS, DEMO_REPS, OBJECTION_CATEGORIES, PERSONAS, REPS, SKILLS } from "./catalog";
 import type {
   Analysis, AppNotification, CallType, KeyMoment, ObjectionInstance, Outcome,
   ProspectTemp, Quality, RubricKey, Rubrics, Session, SkillResult, TranscriptLine,
@@ -193,7 +193,8 @@ export function generateDemoData(anchor: Date, rubrics: Rubrics = DEFAULT_RUBRIC
   for (let i = 0; i < 50; i++) {
     const type = i % 2 === 0 ? "real" : "roleplay";
     const callType = pick(r, callTypes);
-    const rep = r() < 0.72 ? REPS[0] : REPS[1];
+    // Siempre los comerciales de ejemplo: con Supabase el equipo real puede tener un solo miembro.
+    const rep = r() < 0.72 ? DEMO_REPS[0] : DEMO_REPS[1];
     const persona = pick(r, PERSONAS);
     const prospect = type === "real" ? REAL_PROSPECTS[Math.floor(i / 2) % REAL_PROSPECTS.length] : persona.name;
     const daysAgo = Math.floor(r() * 34);
@@ -330,10 +331,18 @@ export function simulateAnalyzedSession(opts: {
   const seed = Math.floor(Math.random() * 1e6);
   const pool = generateDemoData(new Date(), opts.rubrics, seed).sessions.filter((s) => s.callType === opts.callType && s.analysis);
   const base = pool[0] ?? generateDemoData(new Date(), opts.rubrics, seed + 1).sessions.find((s) => s.analysis)!;
-  const rename = (t: string) => t.split(base.prospectName).join(opts.prospectName);
-  const analysis = base.analysis
-    ? (Object.fromEntries(Object.entries(base.analysis).map(([k, v]) => [k, typeof v === "string" ? rename(v) : v])) as Analysis)
-    : null;
+  // El texto de ejemplo menciona al prospecto y al comercial de los datos demo: se cambian por los reales.
+  const demoRep = DEMO_REPS.find((r) => r.id === base.repId);
+  const realRep = REPS.find((r) => r.id === opts.repId);
+  const rename = (t: string) => {
+    let out = t.split(base.prospectName).join(opts.prospectName);
+    if (demoRep && realRep && demoRep.id !== realRep.id) {
+      out = out.split(demoRep.name).join(realRep.name).split(demoRep.name.split(" ")[0]).join(realRep.name.split(" ")[0]);
+    }
+    return out;
+  };
+  // Se renombra todo el análisis, incluidas las listas (áreas de desarrollo, oportunidades…).
+  const analysis = base.analysis ? (JSON.parse(rename(JSON.stringify(base.analysis))) as Analysis) : null;
   if (analysis && !opts.hasAudio) analysis.tone = undefined;
   return {
     ...base,

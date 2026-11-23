@@ -32,10 +32,13 @@ export const OUTCOMES = [
  * los sustituye por los miembros reales de la organización (setRoster) antes de mostrar la app.
  * Se exportan con `let` para que todos los módulos vean el valor actualizado.
  */
-export let REPS: Rep[] = [
+/** Comerciales de ejemplo del modo demo (también los usa el generador de datos de ejemplo). */
+export const DEMO_REPS: Rep[] = [
   { id: "r1", name: "Andrea Ríos", initials: "AR", role: "admin", email: "andrea@sparring.demo", active: true },
   { id: "r2", name: "Óscar Salinas", initials: "OS", role: "comercial", email: "oscar@sparring.demo", active: true },
 ];
+
+export let REPS: Rep[] = DEMO_REPS;
 
 export let CURRENT_USER: Rep = REPS[0];
 
