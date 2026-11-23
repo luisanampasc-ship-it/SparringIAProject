@@ -1,7 +1,7 @@
 "use client";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MyOffer, Persona, Rep, Role, Rubrics, Session } from "@/lib/types";
+import type { AppNotification, MyOffer, Persona, Rep, Role, Rubrics, Session } from "@/lib/types";
 
 /*
  * Lectura y escritura de los datos de la organización en Supabase.
@@ -17,7 +17,16 @@ export interface MemberRow {
   role: Role;
   active: boolean;
   minute_limit: number;
+  prefs?: Prefs;
 }
+
+/** Preferencias de notificación de cada miembro. */
+export interface Prefs {
+  email: boolean;
+  slack: boolean;
+  weekly: boolean;
+}
+export const DEFAULT_PREFS: Prefs = { email: true, slack: false, weekly: true };
 
 export interface InviteRow {
   id: string;
@@ -37,6 +46,8 @@ export interface OrgData {
   notes: Record<string, string>;
   myOffer: MyOffer | null;
   rubrics: Rubrics | null;
+  integrations: Record<string, boolean>;
+  notifications: AppNotification[];
 }
 
 /** Error de configuración que se muestra a la persona usuaria en lugar de la app. */
@@ -101,13 +112,15 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
   if (!me) throw new SetupError("Tu usuario no tiene organización. Suele pasar si se creó antes de ejecutar el script de las tablas: ejecuta en Supabase el script supabase/migrations/0002_backfill_members.sql y recarga.");
   const orgId = (me as MemberRow).org_id;
 
-  const [org, members, invites, personas, sessions, notes] = await Promise.all([
+  const [org, members, invites, personas, sessions, notes, notifications] = await Promise.all([
     sb.from("organizations").select("*").eq("id", orgId).single(),
     sb.from("members").select("*").eq("org_id", orgId).order("created_at"),
     sb.from("invites").select("id,email,role,minute_limit").eq("org_id", orgId),
     sb.from("personas").select("data").eq("org_id", orgId).order("created_at", { ascending: false }),
     sb.from("sessions").select("data").eq("org_id", orgId).order("started_at", { ascending: false }).limit(1000),
     sb.from("session_notes").select("session_id,text").eq("org_id", orgId),
+    // Sin el script 0004 la tabla no existe: se ignora el error y se sigue sin notificaciones.
+    sb.from("notifications").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50),
   ]);
   for (const r of [org, members, personas, sessions, notes]) if (r.error) throw new SetupError(describeError(r.error));
 
@@ -125,6 +138,10 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
     notes: Object.fromEntries((notes.data ?? []).map((n) => [n.session_id, n.text])),
     myOffer: org.data.offer_product ? { company: org.data.offer_company, product: org.data.offer_product } : null,
     rubrics: (org.data.rubrics as Rubrics | null) ?? null,
+    integrations: (org.data.integrations as Record<string, boolean> | undefined) ?? {},
+    notifications: notifications.error
+      ? []
+      : (notifications.data ?? []).map((n) => ({ id: n.id, title: n.title, body: n.body, sessionId: n.session_id ?? undefined, date: new Date(n.created_at), archived: n.archived })),
   };
 }
 

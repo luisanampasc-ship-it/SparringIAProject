@@ -2,9 +2,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_MINUTE_LIMITS, DEFAULT_RUBRICS, PERSONAS, setRoster } from "@/lib/catalog";
+import { CURRENT_USER, DEFAULT_MINUTE_LIMITS, DEFAULT_RUBRICS, INTEGRATIONS, PERSONAS, REPS, setRoster } from "@/lib/catalog";
 import { getSupabase } from "@/lib/supabase/client";
-import { loadOrgData, memberToRep, SetupError, sessionRow, uploadRecording, type InviteRow, type MemberRow } from "@/lib/supabase/data";
+import { DEFAULT_PREFS, initials, loadOrgData, memberToRep, SetupError, sessionRow, uploadRecording, type InviteRow, type MemberRow, type Prefs } from "@/lib/supabase/data";
 import { generateDemoData, recomputeScore } from "@/lib/demo-data";
 import type { AppNotification, MyOffer, Outcome, Persona, Role, Rubrics, Session } from "@/lib/types";
 
@@ -49,6 +49,15 @@ interface AppState {
   inviteMember: (email: string, role: Role) => Promise<string | null>;
   cancelInvite: (id: string) => void;
   signOut: () => Promise<void>;
+  /** Preferencias de notificación del usuario. */
+  prefs: Prefs;
+  /** Guarda el nombre y las preferencias del usuario actual. */
+  saveProfile: (name: string, prefs: Prefs) => void;
+  /** Cambia el nombre de la organización (admin o manager). */
+  renameOrg: (name: string) => void;
+  /** Integraciones conectadas por la organización (id → conectada). */
+  integrations: Record<string, boolean>;
+  setIntegration: (id: string, connected: boolean) => void;
   /** Sube una grabación a Storage y devuelve su ruta (null en modo demo o si falla). */
   uploadRecording: (sessionId: string, blob: Blob) => Promise<string | null>;
   sessions: Session[];
@@ -135,6 +144,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [minuteLimits, setMinuteLimits] = useState<Record<string, number>>(DEFAULT_MINUTE_LIMITS);
   const [myOffer, setMyOfferState] = useState<MyOffer>(DEFAULT_OFFER);
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  // Fuerza a redibujar los componentes que leen el equipo (REPS/CURRENT_USER) cuando cambia.
+  const [rosterVersion, setRosterVersion] = useState(0);
+  const [integrations, setIntegrations] = useState<Record<string, boolean>>(() => Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i.connected])));
   const sessionsRef = useRef<Session[]>([]);
   sessionsRef.current = sessions;
   const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -181,6 +194,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setNotes(loadLocal("sparring.notes", {}));
       setMinuteLimits(loadLocal("sparring.minuteLimits", DEFAULT_MINUTE_LIMITS));
       setMyOfferState(loadLocal("sparring.myOffer", DEFAULT_OFFER));
+      setPrefs(loadLocal("sparring.prefs", DEFAULT_PREFS));
+      setIntegrations((cur) => loadLocal("sparring.integrations", cur));
       setReady(true);
       return;
     }
@@ -203,6 +218,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setNotes(data.notes);
         if (data.myOffer) setMyOfferState(data.myOffer);
         setRubrics(data.rubrics ?? DEFAULT_RUBRICS);
+        setNotifications(data.notifications);
+        setPrefs({ ...DEFAULT_PREFS, ...(data.members.find((m) => m.user_id === data.userId)?.prefs ?? {}) });
+        // Las integraciones guardadas sustituyen a los valores de ejemplo (de inicio, ninguna conectada).
+        setIntegrations(Object.fromEntries(INTEGRATIONS.map((i) => [i.id, Boolean(data.integrations[i.id])])));
         // Organización nueva: se le dan los prospectos de ejemplo para empezar a practicar.
         if (data.personas.length === 0) {
           const seeded = PERSONAS.map((p) => ({ ...p, id: `${p.id}-${data.orgId.slice(0, 8)}`, createdBy: data.userId }));
@@ -251,7 +270,33 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, range,
+      ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, range, prefs, integrations,
+      saveProfile: (name, nextPrefs) => {
+        const clean = name.trim();
+        setPrefs(nextPrefs);
+        saveLocal("sparring.prefs", nextPrefs);
+        // El nombre también se ve en la barra lateral y en los filtros por comercial.
+        const meId = account?.userId ?? CURRENT_USER.id;
+        const reps = REPS.map((r) => (r.id === meId ? { ...r, name: clean || r.name, initials: initials(clean || r.name) } : r));
+        setRoster(reps, reps.find((r) => r.id === meId) ?? reps[0]);
+        setRosterVersion((v) => v + 1);
+        if (!account) return;
+        setAccount((a) => (a ? { ...a, name: clean || a.name } : a));
+        setMembers((ms) => ms.map((m) => (m.user_id === account.userId ? { ...m, name: clean || m.name, prefs: nextPrefs } : m)));
+        persist("tu perfil", (sb) => sb.rpc("update_my_profile", { p_name: clean, p_prefs: nextPrefs }));
+      },
+      renameOrg: (name) => {
+        const clean = name.trim();
+        if (!clean) return;
+        setAccount((a) => (a ? { ...a, orgName: clean } : a));
+        persist("el nombre de la organización", (sb, orgId) => sb.from("organizations").update({ name: clean }).eq("id", orgId));
+      },
+      setIntegration: (id, connected) => {
+        const next = { ...integrations, [id]: connected };
+        setIntegrations(next);
+        saveLocal("sparring.integrations", next);
+        persist("las integraciones", (sb, orgId) => sb.from("organizations").update({ integrations: next }).eq("id", orgId));
+      },
       credits: mode === "supabase" ? Math.max(0, PLAN_MINUTES - orgUsed) : credits,
       planMinutes: PLAN_MINUTES,
       creditsRenewal: mode === "supabase" ? "el día 1 de cada mes" : "el día 24", toasts, notes, minuteLimits, myOffer,
@@ -342,10 +387,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         // Las puntuaciones recalculadas también se guardan.
         persist("las puntuaciones", (sb, orgId) => sb.from("sessions").upsert(rescored.map((s) => sessionRow(s, orgId))));
       },
-      archiveNotification: (id) =>
-        setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, archived: !n.archived } : n))),
-      pushNotification: (n) =>
-        setNotifications((ns) => [{ ...n, id: `n${Date.now()}`, date: new Date(), archived: false }, ...ns]),
+      archiveNotification: (id) => {
+        const current = notifications.find((n) => n.id === id);
+        setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, archived: !n.archived } : n)));
+        if (current) persist("la notificación", (sb) => sb.from("notifications").update({ archived: !current.archived }).eq("id", id));
+      },
+      pushNotification: (n) => {
+        const item = { ...n, id: `n-${crypto.randomUUID()}`, date: new Date(), archived: false };
+        setNotifications((ns) => [item, ...ns]);
+        persist("la notificación", (sb, orgId) =>
+          sb.from("notifications").insert({ id: item.id, org_id: orgId, user_id: account?.userId, title: item.title, body: item.body, session_id: item.sessionId ?? null }),
+        );
+      },
       // Con Supabase el saldo se calcula a partir de las sesiones guardadas.
       spendCredits: (min) => setCredits((c) => Math.max(0, c - min)),
       setNote: (id, text) => {
@@ -362,7 +415,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       toast,
     }),
-    [ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, orgUsed, range, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
+    // rosterVersion: el equipo vive fuera de React (REPS/CURRENT_USER); al cambiarlo hay que redibujar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, loadError, mode, account, members, invites, sessions, personas, rubrics, notifications, credits, orgUsed, range, prefs, integrations, rosterVersion, toasts, notes, minuteLimits, myOffer, updateSession, persist, toast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

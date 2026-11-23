@@ -8,12 +8,13 @@ import { CURRENT_USER } from "@/lib/catalog";
 const input = "mt-1 h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
 
 export default function CuentaPage() {
-  const { credits, planMinutes, creditsRenewal, sessions, toast, myOffer, setMyOffer } = useApp();
+  const { credits, planMinutes, creditsRenewal, sessions, toast, myOffer, setMyOffer, account, prefs: savedPrefs, saveProfile, renameOrg } = useApp();
+  const canEditOrg = !account || account.role === "admin" || account.role === "manager";
   const [offer, setOffer] = useState(myOffer);
-  const [name, setName] = useState(CURRENT_USER.name);
-  const [org, setOrg] = useState("Sparring IA");
+  const [name, setName] = useState(account?.name ?? CURRENT_USER.name);
+  const [org, setOrg] = useState(account?.orgName ?? "Sparring IA");
   const [lang, setLang] = useState("es");
-  const [prefs, setPrefs] = useState({ email: true, slack: false, weekly: true });
+  const [prefs, setPrefs] = useState(savedPrefs);
   const usage = sessions.slice(0, 8);
 
   return (
@@ -26,14 +27,24 @@ export default function CuentaPage() {
             <label className="block text-xs text-muted">Nombre<input className={input} value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label className="block text-xs text-muted">Email<input className={input} value={CURRENT_USER.email} disabled /></label>
             <Select label="Idioma" value={lang} onChange={setLang} options={[{ value: "es", label: "Español" }, { value: "en", label: "English" }]} />
-            <div><Button variant="primary" onClick={() => toast("Perfil guardado")}>Guardar</Button></div>
+            <div><Button variant="primary" disabled={!name.trim()} onClick={() => { saveProfile(name, prefs); toast("Perfil guardado"); }}>Guardar</Button></div>
           </div>
         </Card>
 
         <Card>
           <CardHeader title="Organización y plan" />
           <div className="space-y-3 p-5">
-            <label className="block text-xs text-muted">Nombre de la organización<input className={input} value={org} onChange={(e) => setOrg(e.target.value)} /></label>
+            <label className="block text-xs text-muted">
+              Nombre de la organización
+              <div className="flex gap-2">
+                <input className={input} value={org} disabled={!canEditOrg} onChange={(e) => setOrg(e.target.value)} />
+                {canEditOrg && (
+                  <Button className="mt-1 shrink-0" disabled={!org.trim() || org.trim() === (account?.orgName ?? "")} onClick={() => { renameOrg(org); toast("Nombre de la organización guardado"); }}>
+                    Guardar
+                  </Button>
+                )}
+              </div>
+            </label>
             <div className="rounded-lg border border-primary/30 bg-primary-soft/40 p-4">
               <p className="text-sm font-semibold text-text">Plan Equipo</p>
               <p className="text-xs text-muted">{planMinutes} minutos al mes (simulador y análisis) · hasta 10 miembros</p>
@@ -84,7 +95,17 @@ export default function CuentaPage() {
             ).map(([k, label]) => (
               <label key={k} className="flex items-center justify-between text-sm text-text">
                 {label}
-                <input type="checkbox" checked={prefs[k]} onChange={(e) => setPrefs((p) => ({ ...p, [k]: e.target.checked }))} className="size-4 accent-[var(--primary)]" />
+                <input
+                  type="checkbox"
+                  checked={prefs[k]}
+                  onChange={(e) => {
+                    // Se guarda al momento, con el nombre ya guardado (no con el que se esté editando).
+                    const next = { ...prefs, [k]: e.target.checked };
+                    setPrefs(next);
+                    saveProfile(account?.name ?? CURRENT_USER.name, next);
+                  }}
+                  className="size-4 accent-[var(--primary)]"
+                />
               </label>
             ))}
           </div>

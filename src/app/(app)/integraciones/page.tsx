@@ -8,14 +8,18 @@ import { INTEGRATIONS } from "@/lib/catalog";
 import type { Integration } from "@/lib/types";
 
 export default function IntegracionesPage() {
-  const { toast } = useApp();
-  const [items, setItems] = useState(INTEGRATIONS);
+  const { toast, integrations, setIntegration, account } = useApp();
+  // El estado de cada integración se guarda en la organización y lo comparte todo el equipo.
+  const items = INTEGRATIONS.map((i) => ({ ...i, connected: integrations[i.id] ?? i.connected }));
+  const canManage = !account || account.role === "admin" || account.role === "manager";
   const [webhookOpen, setWebhookOpen] = useState(false);
   const categories = [...new Set(items.map((i) => i.category))];
 
   const toggle = (it: Integration) => {
     if (it.id === "webhook") return setWebhookOpen(true);
-    setItems((xs) => xs.map((x) => (x.id === it.id ? { ...x, connected: !x.connected } : x)));
+    if (!canManage) return toast("Solo un administrador o manager puede conectar integraciones");
+    setIntegration(it.id, !it.connected);
+    // En producción: flujo OAuth del proveedor antes de marcarla como conectada.
     toast(it.connected ? `${it.name} desconectado` : `${it.name} conectado (demo)`);
   };
 
