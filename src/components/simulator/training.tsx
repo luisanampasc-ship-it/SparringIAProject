@@ -15,8 +15,9 @@ import type { CallType, Persona, TranscriptLine } from "@/lib/types";
 import type { SessionConfig, VoiceConversation } from "@elevenlabs/client";
 
 type VoiceOverrides = NonNullable<SessionConfig["overrides"]>;
-import { cn } from "@/lib/utils";
-import { toneOf } from "@/lib/voice-tone";
+import { cn, toneSoft } from "@/lib/utils";
+import { detectPitch, prosodyOf, toSemitones } from "@/lib/prosody";
+import { toneKind, toneOf } from "@/lib/voice-tone";
 
 export type { Difficulty } from "@/lib/prospect-prompt";
 import type { Difficulty } from "@/lib/prospect-prompt";
@@ -174,6 +175,13 @@ const BARGE_IN_MS = 400; // y que la interrupción dure un mínimo
 
 type Turn = "prospect" | "rep" | "thinking";
 
+/** Medidas del micrófono durante una intervención del comercial. */
+function newTurnStats() {
+  return { sum: 0, frames: 0, pauses: 0, silentSince: 0, pitch: [] as number[], loud: [] as number[] };
+}
+
+type TurnMeasure = { t: number; text: string; seconds: number; levelSum: number; frames: number; pauses: number; pitch: number[]; loud: number[] };
+
 /*
  * Voz del prospecto según su género. En modo demo usamos las voces del navegador;
  * en producción se sustituye por ElevenLabs (una voz por prospecto) o por la voz de OpenAI Realtime.
@@ -247,9 +255,11 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const callStart = useRef(0);
   const repText = useRef(""); // texto reconocido del turno actual del comercial
   const captured = useRef<TranscriptLine[]>([]);
-  const pendingRep = useRef<{ t: number; seconds: number; levelSum: number; frames: number; pauses: number } | null>(null);
-  const turnStats = useRef({ sum: 0, frames: 0, pauses: 0, silentSince: 0 });
-  const totals = useRef({ voiceMs: 0, levelSum: 0, levelFrames: 0, longPauses: 0 });
+  const pendingRep = useRef<{ t: number; seconds: number; levelSum: number; frames: number; pauses: number; pitch: number[]; loud: number[] } | null>(null);
+  const turnStats = useRef(newTurnStats());
+  const totals = useRef({ voiceMs: 0, levelSum: 0, levelFrames: 0, longPauses: 0, pitchSum: 0, pitchCount: 0 });
+  // Intervenciones del comercial que sonaron enojadas o tensas (para el análisis final).
+  const angryLines = useRef<{ t: number; text: string; tone: string }[]>([]);
   const voice = useRef(pickVoice(persona.gender));
   const audioCtx = useRef<AudioContext | null>(null);
   const vad = useRef({ speechStart: 0, lastVoice: 0, heard: false });
@@ -363,8 +373,10 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       levelSum: (pendingRep.current?.levelSum ?? 0) + st.sum,
       frames: (pendingRep.current?.frames ?? 0) + st.frames,
       pauses: (pendingRep.current?.pauses ?? 0) + st.pauses,
+      pitch: [...(pendingRep.current?.pitch ?? []), NaN, ...st.pitch],
+      loud: [...(pendingRep.current?.loud ?? []), ...st.loud],
     };
-    turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+    turnStats.current = newTurnStats();
     setTurnBoth("thinking");
     // Pequeña espera: deja que lleguen las últimas palabras reconocidas antes de que el prospecto responda.
     setTimeout(prospectSpeaks, 700 + Math.random() * 500);
@@ -379,20 +391,31 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       t: p?.t ?? elapsed(),
       speaker: "rep",
       text: text || `(intervención de ${p?.seconds ?? 0} s sin transcribir)`,
-      tone: p && text ? measureTone(text, p.seconds, p.levelSum, p.frames, p.pauses) : undefined,
+      tone: p && text ? measureTone(line0(p, text)) : undefined,
     };
     captured.current.push(line);
     setLines((l) => [...l, { who: "rep", text: line.text, tone: line.tone }]);
     repText.current = "";
     setInterim("");
     pendingRep.current = null;
-    turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+    turnStats.current = newTurnStats();
   }
 
   /** Tono de la intervención: texto + ritmo + pausas + volumen frente a la media del propio comercial. */
-  function measureTone(text: string, seconds: number, levelSum: number, frames: number, pauses: number) {
+  function measureTone(m: TurnMeasure) {
     const tot = totals.current;
-    return toneOf({ text, seconds, level: frames ? levelSum / frames : 0, baseline: tot.levelFrames ? tot.levelSum / tot.levelFrames : 0, pauses });
+    const prosody = prosodyOf(m.pitch, m.loud, tot.pitchCount >= 60 ? tot.pitchSum / tot.pitchCount : NaN);
+    const tone = toneOf({ text: m.text, seconds: m.seconds, level: m.frames ? m.levelSum / m.frames : 0, baseline: tot.levelFrames ? tot.levelSum / tot.levelFrames : 0, pauses: m.pauses, prosody });
+    if (tone && toneKind(tone) === "bad") {
+      angryLines.current.push({ t: m.t, text: m.text, tone });
+      // Aviso en vivo: perder la calma con un cliente es el error más caro.
+      if (/enojad/i.test(tone)) toast("Tu tono suena enojado: respira, baja el ritmo y vuelve a preguntar.");
+    }
+    return tone;
+  }
+
+  function line0(p: NonNullable<typeof pendingRep.current>, text: string): TurnMeasure {
+    return { t: p.t, text, seconds: p.seconds, levelSum: p.levelSum, frames: p.frames, pauses: p.pauses, pitch: p.pitch, loud: p.loud };
   }
 
   function elapsed() {
@@ -478,10 +501,10 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         // Intervención del comercial ya transcrita: tono medido con el micrófono durante su turno.
         const st = turnStats.current;
         const spoken = Math.max(1, Math.round((st.frames * 16) / 1000));
-        const tone = st.frames ? measureTone(message, (st.frames * 16) / 1000, st.sum, st.frames, st.pauses) : undefined;
+        const tone = st.frames ? measureTone({ t: Math.max(0, elapsed() - spoken), text: message, seconds: (st.frames * 16) / 1000, levelSum: st.sum, frames: st.frames, pauses: st.pauses, pitch: st.pitch, loud: st.loud }) : undefined;
         captured.current.push({ t: Math.max(0, elapsed() - spoken), speaker: "rep", text: message, tone });
         setLines((l) => [...l, { who: "rep", text: message, tone }]);
-        turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+        turnStats.current = newTurnStats();
         // Desde aquí hasta que el prospecto empiece a hablar, la IA está preparando su respuesta: no cuenta.
         if (turnRef.current === "rep") setTurnBoth("thinking");
       },
@@ -515,7 +538,9 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       audioCtx.current = ctx;
       const analyser = ctx.createAnalyser();
       ctx.createMediaStreamSource(stream.current).connect(analyser);
+      analyser.fftSize = 2048;
       const data = new Uint8Array(analyser.frequencyBinCount);
+      const wave = new Float32Array(analyser.fftSize);
       const loop = () => {
         if (!stream.current) return;
         analyser.getByteFrequencyData(data);
@@ -527,6 +552,18 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           // Estadísticas para el análisis de tono: volumen medio y pausas dentro del turno.
           st.sum += lv;
           st.frames += 1;
+          // Altura de la voz en este fotograma (análisis de prosodia en el navegador).
+          if (st.pitch.length < 4000) {
+            analyser.getFloatTimeDomainData(wave);
+            const hz = detectPitch(wave, ctx.sampleRate);
+            const semi = hz ? toSemitones(hz) : NaN;
+            st.pitch.push(semi);
+            st.loud.push(lv);
+            if (hz) {
+              totals.current.pitchSum += semi;
+              totals.current.pitchCount += 1;
+            }
+          }
           totals.current.levelSum += lv;
           totals.current.levelFrames += 1;
           totals.current.voiceMs += 16;
@@ -666,12 +703,22 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             energy: Math.min(100, Math.round((tot.levelSum / tot.levelFrames) * 180)),
           }
         : base.analysis?.tone;
+      // Enojo o tensión detectados en la voz: área de desarrollo y menos cercanía/control.
+      const angry = angryLines.current;
+      const emotional = angry.length
+        ? {
+            skill: "Control emocional",
+            quote: angry[0].text.slice(0, 200),
+            impact: `Tu voz sonó ${angry.some((a) => /enojad/i.test(a.tone)) ? "enojada" : "tensa"} en ${angry.length} intervención${angry.length > 1 ? "es" : ""}. Con un cliente, subir el tono o mostrar impaciencia rompe la confianza: baja el ritmo, respira y responde con una pregunta.`,
+          }
+        : null;
+      const toneFinal = tone && angry.length ? { ...tone, warmth: Math.max(0, tone.warmth - 15 * angry.length), control: Math.max(0, tone.control - 10 * angry.length) } : tone;
       const s = {
         ...base,
         durationSec: callSec,
         // Siempre la transcripción real de la llamada, aunque sea corta: nunca texto de ejemplo.
         transcript,
-        analysis: base.analysis ? { ...base.analysis, tone } : null,
+        analysis: base.analysis ? { ...base.analysis, tone: toneFinal, developmentAreas: emotional ? [emotional, ...base.analysis.developmentAreas] : base.analysis.developmentAreas } : null,
         capture: {
           prospectVoice: engineRef.current === "eleven" ? `ElevenLabs · ${elevenVoice.current}` : voice.current.label,
           transcribed,
@@ -773,7 +820,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
             {lines.map((l, i) => (
               <p key={i} className={l.who === "prospect" ? "text-text" : "text-primary-text"}>
                 <b>{l.who === "prospect" ? persona.name.split(" ")[0] : "Tú"}:</b> {l.text}
-                {l.tone && <span className="ml-1.5 rounded bg-surface px-1 text-[10px] text-muted">{l.tone}</span>}
+                {l.tone && <span className={cn("ml-1.5 rounded px-1 text-[10px]", toneKind(l.tone) ? toneSoft[toneKind(l.tone)!] : "bg-surface text-muted")}>{l.tone}</span>}
               </p>
             ))}
             {interim && (
