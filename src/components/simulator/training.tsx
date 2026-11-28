@@ -16,6 +16,7 @@ import type { SessionConfig, VoiceConversation } from "@elevenlabs/client";
 
 type VoiceOverrides = NonNullable<SessionConfig["overrides"]>;
 import { cn } from "@/lib/utils";
+import { toneOf } from "@/lib/voice-tone";
 
 export type { Difficulty } from "@/lib/prospect-prompt";
 import type { Difficulty } from "@/lib/prospect-prompt";
@@ -194,14 +195,6 @@ function pickVoice(gender: Persona["gender"]) {
   }
 }
 
-/** Tono de una intervención a partir del volumen medio y las pausas medidas por el micrófono. */
-function toneLabel(avgLevel: number, pauses: number, seconds: number) {
-  if (seconds > 3 && pauses >= 3) return "Dubitativo";
-  if (avgLevel >= 0.38) return "Enérgico";
-  if (avgLevel < 0.2) return "Bajo / poco seguro";
-  return "Seguro y tranquilo";
-}
-
 // Reconocimiento de voz del navegador (Chrome/Edge). En producción: transcripción del audio con diarización.
 type Recognition = {
   lang: string;
@@ -254,7 +247,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const callStart = useRef(0);
   const repText = useRef(""); // texto reconocido del turno actual del comercial
   const captured = useRef<TranscriptLine[]>([]);
-  const pendingRep = useRef<{ t: number; seconds: number; tone: string } | null>(null);
+  const pendingRep = useRef<{ t: number; seconds: number; levelSum: number; frames: number; pauses: number } | null>(null);
   const turnStats = useRef({ sum: 0, frames: 0, pauses: 0, silentSince: 0 });
   const totals = useRef({ voiceMs: 0, levelSum: 0, levelFrames: 0, longPauses: 0 });
   const voice = useRef(pickVoice(persona.gender));
@@ -362,13 +355,16 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     const spoken = vad.current.heard ? Math.max(1, Math.round((vad.current.lastVoice - vad.current.speechStart) / 1000)) : 0;
     vad.current.heard = false;
     const st = turnStats.current;
-    const avgLevel = st.frames ? st.sum / st.frames : 0;
     // Acumulamos: si el comercial retoma la palabra antes de que el prospecto responda, sigue siendo el mismo turno.
+    // El tono se calcula al escribir la línea, cuando ya tenemos el texto reconocido.
     pendingRep.current = {
       t: pendingRep.current?.t ?? Math.max(0, elapsed() - spoken),
       seconds: (pendingRep.current?.seconds ?? 0) + spoken,
-      tone: spoken ? toneLabel(avgLevel, st.pauses, spoken) : pendingRep.current?.tone ?? "",
+      levelSum: (pendingRep.current?.levelSum ?? 0) + st.sum,
+      frames: (pendingRep.current?.frames ?? 0) + st.frames,
+      pauses: (pendingRep.current?.pauses ?? 0) + st.pauses,
     };
+    turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
     setTurnBoth("thinking");
     // Pequeña espera: deja que lleguen las últimas palabras reconocidas antes de que el prospecto responda.
     setTimeout(prospectSpeaks, 700 + Math.random() * 500);
@@ -383,7 +379,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       t: p?.t ?? elapsed(),
       speaker: "rep",
       text: text || `(intervención de ${p?.seconds ?? 0} s sin transcribir)`,
-      tone: p?.tone || undefined,
+      tone: p && text ? measureTone(text, p.seconds, p.levelSum, p.frames, p.pauses) : undefined,
     };
     captured.current.push(line);
     setLines((l) => [...l, { who: "rep", text: line.text, tone: line.tone }]);
@@ -391,6 +387,12 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
     setInterim("");
     pendingRep.current = null;
     turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
+  }
+
+  /** Tono de la intervención: texto + ritmo + pausas + volumen frente a la media del propio comercial. */
+  function measureTone(text: string, seconds: number, levelSum: number, frames: number, pauses: number) {
+    const tot = totals.current;
+    return toneOf({ text, seconds, level: frames ? levelSum / frames : 0, baseline: tot.levelFrames ? tot.levelSum / tot.levelFrames : 0, pauses });
   }
 
   function elapsed() {
@@ -476,7 +478,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
         // Intervención del comercial ya transcrita: tono medido con el micrófono durante su turno.
         const st = turnStats.current;
         const spoken = Math.max(1, Math.round((st.frames * 16) / 1000));
-        const tone = st.frames ? toneLabel(st.sum / st.frames, st.pauses, spoken) : undefined;
+        const tone = st.frames ? measureTone(message, (st.frames * 16) / 1000, st.sum, st.frames, st.pauses) : undefined;
         captured.current.push({ t: Math.max(0, elapsed() - spoken), speaker: "rep", text: message, tone });
         setLines((l) => [...l, { who: "rep", text: message, tone }]);
         turnStats.current = { sum: 0, frames: 0, pauses: 0, silentSince: 0 };
