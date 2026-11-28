@@ -1,15 +1,15 @@
 "use client";
 
-import { Globe, Loader2, Mic, PencilLine, Sparkles, Star, Store, UploadCloud } from "lucide-react";
+import { Globe, Loader2, Mic, PencilLine, Shuffle, Sparkles, Star, Store, UploadCloud } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "@/components/app-state";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Button, Modal, Popover, Segmented, Select } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
 import { generateFromClientWeb, generateFromDescription, generateFromOwnWeb, pickName } from "@/lib/persona-generator";
-import type { Gender, Persona } from "@/lib/types";
+import type { Authority, Gender, Persona } from "@/lib/types";
 
-type Mode = "ai" | "manual" | "web-client" | "web-own" | "audio" | null;
+type Mode = "ai" | "manual" | "b2b-web" | "b2b-audio" | "b2b-random" | "b2c-web" | "b2c-audio" | "b2c-random" | null;
 
 const input = "mt-1 h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
 const area = "mt-1 w-full resize-y rounded-lg border border-border bg-surface p-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30";
@@ -18,60 +18,81 @@ function blank(): Persona {
   return { id: `p-${crypto.randomUUID()}`, gender: "femenino", name: "", role: "", company: "", sector: "", tags: [], segment: "B2B", description: "", personality: "", objections: [], createdBy: CURRENT_USER.id };
 }
 
+const MENU: { group: string; items: { id: Exclude<Mode, null>; icon: React.ElementType; title: string; sub: string }[] }[] = [
+  {
+    group: "Crear",
+    items: [
+      { id: "ai", icon: Star, title: "Asistente IA", sub: "Genera el prospecto con IA" },
+      { id: "manual", icon: PencilLine, title: "Configuración manual", sub: "Paso a paso" },
+    ],
+  },
+  {
+    group: "Importar cliente B2B",
+    items: [
+      { id: "b2b-web", icon: Globe, title: "Desde la web del cliente", sub: "Su web y el cargo con el que negociarás" },
+      { id: "b2b-audio", icon: Mic, title: "Desde grabación", sub: "Clónalo desde una llamada con una empresa" },
+      { id: "b2b-random", icon: Shuffle, title: "Cliente aleatorio", sub: "Indica el sector" },
+    ],
+  },
+  {
+    group: "Importar cliente B2C",
+    items: [
+      { id: "b2c-web", icon: Store, title: "Desde tu web", sub: "Tu web: generamos un cliente ideal aleatorio" },
+      { id: "b2c-audio", icon: Mic, title: "Desde grabación", sub: "Clónalo desde una llamada con un particular" },
+      { id: "b2c-random", icon: Shuffle, title: "Cliente aleatorio", sub: "Resume tus servicios o productos" },
+    ],
+  },
+];
+
 export function CreateProspectMenu() {
   const [mode, setMode] = useState<Mode>(null);
-  const items = [
-    { group: "Crear", id: "ai" as const, icon: Star, title: "Asistente IA", sub: "Genera el prospecto con IA" },
-    { group: "Crear", id: "manual" as const, icon: PencilLine, title: "Configuración manual", sub: "Paso a paso" },
-    { group: "Importar", id: "web-client" as const, icon: Globe, title: "Desde la web del cliente", sub: "La web de la empresa a la que vas a vender" },
-    { group: "Importar", id: "web-own" as const, icon: Store, title: "Desde tu web", sub: "Tu negocio: generamos a tu cliente ideal" },
-    { group: "Importar", id: "audio" as const, icon: Mic, title: "Desde grabación", sub: "Clónalo desde un audio" },
-  ];
+  const close = () => setMode(null);
   return (
     <>
       <Popover
-        className="w-[420px] max-w-[90vw] p-4"
+        className="w-[680px] max-w-[92vw] p-4"
         trigger={(_, toggle) => (
           <Button variant="primary" onClick={toggle}>
             Crear nuevo prospecto <span className="grid size-4 place-items-center rounded bg-white/20 text-xs">+</span>
           </Button>
         )}
       >
-        {(close) => (
-          <div className="grid grid-cols-2 gap-4">
-            {(["Crear", "Importar"] as const).map((g) => (
-              <div key={g}>
-                <p className="mb-2 text-[10px] font-semibold tracking-wider text-faint uppercase">{g}</p>
-                {items
-                  .filter((i) => i.group === g)
-                  .map((i) => (
-                    <button
-                      key={i.id}
-                      onClick={() => {
-                        setMode(i.id);
-                        close();
-                      }}
-                      className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-surface-2"
-                    >
-                      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border">
-                        <i.icon className="size-4 text-muted" />
-                      </span>
-                      <span>
-                        <span className="block text-sm font-medium text-text">{i.title}</span>
-                        <span className="block text-[11px] text-faint">{i.sub}</span>
-                      </span>
-                    </button>
-                  ))}
+        {(closeMenu) => (
+          <div className="grid gap-4 sm:grid-cols-3">
+            {MENU.map((g) => (
+              <div key={g.group}>
+                <p className="mb-2 text-[10px] font-semibold tracking-wider text-faint uppercase">{g.group}</p>
+                {g.items.map((i) => (
+                  <button
+                    key={i.id}
+                    onClick={() => {
+                      setMode(i.id);
+                      closeMenu();
+                    }}
+                    className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-surface-2"
+                  >
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border">
+                      <i.icon className="size-4 text-muted" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-medium text-text">{i.title}</span>
+                      <span className="block text-[11px] text-faint">{i.sub}</span>
+                    </span>
+                  </button>
+                ))}
               </div>
             ))}
           </div>
         )}
       </Popover>
-      <AiModal open={mode === "ai"} onClose={() => setMode(null)} />
-      <ManualModal open={mode === "manual"} onClose={() => setMode(null)} />
-      <WebModal kind="client" open={mode === "web-client"} onClose={() => setMode(null)} />
-      <WebModal kind="own" open={mode === "web-own"} onClose={() => setMode(null)} />
-      <AudioModal open={mode === "audio"} onClose={() => setMode(null)} />
+      <AiModal open={mode === "ai"} onClose={close} />
+      <ManualModal open={mode === "manual"} onClose={close} />
+      <WebModal kind="client" open={mode === "b2b-web"} onClose={close} />
+      <WebModal kind="own" open={mode === "b2c-web"} onClose={close} />
+      <AudioModal segment="B2B" open={mode === "b2b-audio"} onClose={close} />
+      <AudioModal segment="B2C" open={mode === "b2c-audio"} onClose={close} />
+      <RandomModal segment="B2B" open={mode === "b2b-random"} onClose={close} />
+      <RandomModal segment="B2C" open={mode === "b2c-random"} onClose={close} />
     </>
   );
 }
@@ -231,13 +252,13 @@ function ManualModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 
 const WEB_COPY = {
   client: {
-    title: "Crear prospecto desde la web del cliente",
-    subtitle: "Introduce la URL de la empresa a la que vas a vender y generamos el perfil de su decisor para que prepares la llamada.",
+    title: "Cliente B2B desde su web",
+    subtitle: "Introduce la web de la empresa a la que vas a vender y el cargo de la persona con la que negociarás.",
     placeholder: "https://www.empresa-cliente.com",
   },
   own: {
-    title: "Crear prospecto desde tu web",
-    subtitle: "Introduce la URL de tu propio negocio y generamos automáticamente el perfil de tu cliente ideal para practicar cómo venderle.",
+    title: "Cliente B2C desde tu web",
+    subtitle: "Introduce la web de tu negocio y generamos un cliente particular ideal, distinto cada vez, para practicar cómo venderle.",
     placeholder: "https://www.tu-negocio.com",
   },
 } as const;
@@ -250,6 +271,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
   const [contactName, setContactName] = useState("");
   const [contactRole, setContactRole] = useState("");
   const [contactSource, setContactSource] = useState<"linkedin" | "otra">("linkedin");
+  const [authority, setAuthority] = useState<Authority>("propone");
   const [gender, setGender] = useState<GenderChoice>("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -264,7 +286,18 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       const res = await fetch("/api/personas/from-web", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: normalized, kind, contactName: contactName || undefined, contactRole: contactRole || undefined, offer: kind === "client" ? offer : undefined, sellerCompany: myOffer.company, gender: gender === "auto" ? undefined : gender, contactSource: contactName ? contactSource : undefined }),
+        body: JSON.stringify({
+          url: normalized,
+          kind,
+          contactName: contactName || undefined,
+          contactRole: contactRole || undefined,
+          authority: kind === "client" ? authority : undefined,
+          segment: kind === "own" ? "B2C" : "B2B",
+          offer: kind === "client" ? offer : undefined,
+          sellerCompany: myOffer.company,
+          gender: gender === "auto" ? undefined : gender,
+          contactSource: contactName ? contactSource : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -300,7 +333,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" disabled={!valid || loading || (kind === "client" && !offer.trim())} onClick={create}>
+          <Button variant="primary" disabled={!valid || loading || (kind === "client" && (!offer.trim() || !contactRole.trim()))} onClick={create}>
             {loading && <Loader2 className="size-4 animate-spin" />} {loading ? "Leyendo la web…" : kind === "client" ? "Crear prospecto" : "Generar cliente ideal"}
           </Button>
         </>
@@ -320,12 +353,33 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
         </label>
       )}
       {kind === "client" && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs text-muted">
+            Cargo o rango de tu interlocutor
+            <input value={contactRole} onChange={(e) => setContactRole(e.target.value)} placeholder="Ej.: Jefe de Compras" className={input} />
+          </label>
+          <div className="text-xs text-muted">
+            Nivel de decisión
+            <div className="mt-1">
+              <Select
+                value={authority}
+                onChange={setAuthority}
+                options={[
+                  { value: "decide", label: "Decide la compra" },
+                  { value: "propone", label: "Propone a un superior" },
+                  { value: "informa", label: "Solo recoge información" },
+                ]}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      {kind === "client" && (
         <div className="mt-4 rounded-lg border border-border p-3">
-          <p className="text-xs font-medium text-text">Contacto (opcional)</p>
+          <p className="text-xs font-medium text-text">Nombre del contacto (opcional)</p>
           <p className="mt-0.5 text-[11px] text-muted">Si sabes con quién hablarás (por ejemplo, por su LinkedIn), escríbelo. Si no, buscamos al equipo directivo en su web y, si no aparece, usamos un nombre ficticio.</p>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2">
             <input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Nombre y apellido" className={input} />
-            <input value={contactRole} onChange={(e) => setContactRole(e.target.value)} placeholder="Cargo" className={input} />
           </div>
           {contactName.trim() && (
             <div className="mt-2 space-y-1">
@@ -340,7 +394,7 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
   );
 }
 
-function AudioModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AudioModal({ segment, open, onClose }: { segment: "B2B" | "B2C"; open: boolean; onClose: () => void }) {
   const save = useSave(onClose);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -348,8 +402,8 @@ function AudioModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Crear prospecto desde grabación"
-      subtitle="Sube una llamada real y clonamos la personalidad y las objeciones del prospecto."
+      title={`Cliente ${segment} desde grabación`}
+      subtitle={segment === "B2B" ? "Sube una llamada real con una empresa y clonamos la personalidad y las objeciones de tu interlocutor." : "Sube una llamada real con un cliente particular y clonamos su personalidad y sus objeciones."}
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
@@ -360,7 +414,9 @@ function AudioModal({ open, onClose }: { open: boolean; onClose: () => void }) {
               setLoading(true);
               setTimeout(() => {
                 setLoading(false);
-                save({ ...generateFromDescription(file!.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "), blank()), sector: "Clonado desde audio", tags: ["Clonado desde audio"] });
+                // En producción: transcripción del audio + IA que extrae personalidad y objeciones.
+                const p = generateFromDescription(file!.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "), blank());
+                save({ ...p, segment, company: segment === "B2C" ? "Particular" : p.company, sector: "Clonado desde audio", tags: ["Clonado desde audio"], nameSource: "ficticio" });
                 setFile(null);
               }, 2000);
             }}
@@ -397,5 +453,101 @@ function GenderField({ value, onChange, hint }: { value: GenderChoice; onChange:
       />
       {hint && <span className="text-[11px] text-faint">{hint}</span>}
     </div>
+  );
+}
+
+/** Cliente aleatorio: B2B a partir del sector; B2C a partir de tus servicios o productos. */
+function RandomModal({ segment, open, onClose }: { segment: "B2B" | "B2C"; open: boolean; onClose: () => void }) {
+  const save = useSave(onClose);
+  const { myOffer, toast } = useApp();
+  const [sector, setSector] = useState("");
+  const [role, setRole] = useState("");
+  const [authority, setAuthority] = useState<Authority>("propone");
+  const [activities, setActivities] = useState([myOffer.product, myOffer.advantages].filter(Boolean).join(". "));
+  const [gender, setGender] = useState<GenderChoice>("auto");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const valid = segment === "B2B" ? sector.trim().length > 1 : activities.trim().length > 5;
+
+  async function create() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/personas/random", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          segment,
+          sector: segment === "B2B" ? sector : undefined,
+          activities: segment === "B2C" ? activities : undefined,
+          offer: myOffer.product,
+          role: segment === "B2B" ? role || undefined : undefined,
+          authority: segment === "B2B" ? authority : undefined,
+          gender: gender === "auto" ? undefined : gender,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setError(data.error ?? "No se pudo generar el cliente.");
+      save({ ...blank(), ...data.persona, id: blank().id, createdBy: CURRENT_USER.id });
+      if (data.source === "ia") toast("Cliente generado con IA");
+    } catch {
+      setError("No se pudo conectar con el servidor. Inténtalo de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Cliente ${segment} aleatorio`}
+      subtitle={segment === "B2B" ? "Indica el sector y generamos una empresa y un interlocutor ficticios, distintos cada vez." : "Resume lo que vendes y generamos un cliente particular ficticio, distinto cada vez."}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" disabled={!valid || loading} onClick={create}>
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Shuffle className="size-4" />} Generar cliente
+          </Button>
+        </>
+      }
+    >
+      {segment === "B2B" ? (
+        <div className="space-y-3">
+          <label className="block text-xs text-muted">
+            Sector
+            <input className={input} value={sector} onChange={(e) => setSector(e.target.value)} placeholder="Ej.: Minería, Retail, Clínicas dentales…" />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs text-muted">
+              Cargo o rango (opcional)
+              <input className={input} value={role} onChange={(e) => setRole(e.target.value)} placeholder="Ej.: Gerente de Operaciones" />
+            </label>
+            <div className="text-xs text-muted">
+              Nivel de decisión
+              <div className="mt-1">
+                <Select
+                  value={authority}
+                  onChange={setAuthority}
+                  options={[
+                    { value: "decide", label: "Decide la compra" },
+                    { value: "propone", label: "Propone a un superior" },
+                    { value: "informa", label: "Solo recoge información" },
+                  ]}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <label className="block text-xs text-muted">
+          Resumen de tus actividades (principales servicios o productos)
+          <textarea className={`${area} h-28`} value={activities} onChange={(e) => setActivities(e.target.value)} placeholder="Ej.: Clínica oftalmológica: consultas, exámenes de la vista, lentes y cirugía refractiva" />
+          <span className="mt-1 block text-[11px] text-faint">Se rellena con lo que guardaste en Cuenta («Tu empresa y lo que vendes»). Puedes cambiarlo para esta vez.</span>
+        </label>
+      )}
+      <GenderField value={gender} onChange={setGender} />
+      {error && <p className="mt-2 rounded-lg bg-bad-soft px-3 py-2 text-xs text-bad">{error}</p>}
+    </Modal>
   );
 }

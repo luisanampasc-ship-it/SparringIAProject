@@ -24,6 +24,40 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; fall
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const audioUrl = useFallback ? fallbackUrl : primaryUrl;
+  const [waiting, setWaiting] = useState(false);
+
+  // Si la grabación completa aún no está lista (ElevenLabs la procesa tras colgar), se vuelve a
+  // intentar sola cada pocos segundos y se cambia a ella en cuanto esté disponible.
+  useEffect(() => {
+    if (!primaryUrl || primaryUrl.startsWith("blob:") || !(useFallback || failed)) return;
+    let tries = 0;
+    let cancelled = false;
+    setWaiting(true);
+    const id = setInterval(async () => {
+      tries += 1;
+      try {
+        const res = await fetch(primaryUrl, { cache: "no-store" });
+        if (!cancelled && res.ok) {
+          clearInterval(id);
+          setWaiting(false);
+          setPlaying(false);
+          setUseFallback(false);
+          setFailed(false);
+          setRetry((r) => r + 1);
+        }
+      } catch {
+        /* se vuelve a intentar */
+      }
+      if (tries >= 36) {
+        clearInterval(id);
+        setWaiting(false);
+      }
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [primaryUrl, useFallback, failed]);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(durationSec);
@@ -129,7 +163,7 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; fall
       {!audioUrl && <p className="mt-1.5 text-[11px] text-faint">Sin grabación de audio: es una sesión de ejemplo.</p>}
       {audioUrl && failed && (
         <p className="mt-1.5 text-[11px] text-warn">
-          La grabación aún no está disponible (puede tardar unos segundos en procesarse).{" "}
+          {waiting ? "Procesando la grabación… aparecerá aquí sola en unos segundos." : "La grabación aún no está disponible."}{" "}
           <button className="font-medium underline" onClick={() => { setFailed(false); setUseFallback(false); setRetry((r) => r + 1); }}>
             Reintentar
           </button>
@@ -137,7 +171,7 @@ export const WaveformPlayer = forwardRef<PlayerHandle, { audioUrl?: string; fall
       )}
       {audioUrl && !failed && useFallback && (
         <p className="mt-1.5 text-[11px] text-faint">
-          Mostrando la grabación de tu micrófono (solo tu voz): la grabación completa aún se está procesando.{" "}
+          Mostrando la grabación de tu micrófono (solo tu voz). {waiting ? "La grabación completa se está procesando y aparecerá aquí sola en cuanto esté lista." : "La grabación completa aún no está lista."}{" "}
           <button className="font-medium text-primary-text underline" onClick={() => { setUseFallback(false); setRetry((r) => r + 1); }}>
             Cargar la grabación completa
           </button>

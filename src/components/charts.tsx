@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 const axis = { fontSize: 11, fill: "var(--faint)" };
@@ -67,5 +67,33 @@ export function Sparkline({ data, width = 70, height = 22, color = "var(--primar
     <svg width={width} height={height} className="overflow-visible">
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** Barras agrupadas: una barra por serie (p. ej. por integrante) en cada categoría. Valores en %. */
+export function GroupedBars({ data, series, height = 260, layout = "horizontal" }: { data: Record<string, number | string>[]; series: { key: string; name: string; color: string }[]; height?: number; layout?: "horizontal" | "vertical" }) {
+  const vertical = layout === "vertical";
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} layout={vertical ? "vertical" : "horizontal"} margin={{ top: 10, right: 16, left: vertical ? 40 : -18, bottom: 0 }} barGap={2}>
+        <CartesianGrid horizontal={!vertical} vertical={vertical} stroke="var(--border)" strokeDasharray="3 3" />
+        {vertical ? (
+          <>
+            <XAxis type="number" domain={[0, 100]} tick={axis} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+            <YAxis type="category" dataKey="label" width={130} tick={axis} axisLine={false} tickLine={false} />
+          </>
+        ) : (
+          <>
+            <XAxis dataKey="label" tick={axis} axisLine={false} tickLine={false} />
+            <YAxis domain={[0, 100]} tick={axis} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+          </>
+        )}
+        <Tooltip {...tooltipStyle} formatter={(v) => `${v}%`} cursor={{ fill: "var(--surface-2)" }} />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+        {series.map((s) => (
+          <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={vertical ? [0, 4, 4, 0] : [4, 4, 0, 0]} maxBarSize={28} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
   );
 }

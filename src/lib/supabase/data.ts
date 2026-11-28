@@ -136,7 +136,7 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
     personas: (personas.data ?? []).map((r) => r.data as Persona),
     sessions: sessionList,
     notes: Object.fromEntries((notes.data ?? []).map((n) => [n.session_id, n.text])),
-    myOffer: org.data.offer_product ? { company: org.data.offer_company, product: org.data.offer_product } : null,
+    myOffer: org.data.offer_product ? { company: org.data.offer_company, product: org.data.offer_product, ...((org.data.offer_details as Partial<MyOffer> | undefined) ?? {}) } : null,
     rubrics: (org.data.rubrics as Rubrics | null) ?? null,
     integrations: (org.data.integrations as Record<string, boolean> | undefined) ?? {},
     notifications: notifications.error
@@ -147,15 +147,19 @@ export async function loadOrgData(sb: SupabaseClient): Promise<OrgData | null> {
 
 /** Genera enlaces temporales para escuchar las grabaciones guardadas en Storage. */
 async function attachRecordingUrls(sb: SupabaseClient, sessions: Session[]) {
-  const withAudio = sessions.filter((s) => s.audioPath);
-  if (!withAudio.length) return;
-  const { data } = await sb.storage.from("recordings").createSignedUrls(withAudio.map((s) => s.audioPath!), 60 * 60 * 12);
+  const paths = sessions.flatMap((s) => [s.audioPath, s.capture?.fullAudioPath].filter((p): p is string => Boolean(p)));
+  if (!paths.length) return;
+  const { data } = await sb.storage.from("recordings").createSignedUrls(paths, 60 * 60 * 12);
   const byPath = new Map((data ?? []).map((d) => [d.path, d.signedUrl]));
-  for (const s of withAudio) {
-    const url = byPath.get(s.audioPath!);
-    if (!url) continue;
-    if (s.audioUrl) s.capture = { ...(s.capture ?? { prospectVoice: "", transcribed: false }), micAudioUrl: url };
-    else s.audioUrl = url;
+  for (const s of sessions) {
+    const full = s.capture?.fullAudioPath ? byPath.get(s.capture.fullAudioPath) : undefined;
+    const mic = s.audioPath ? byPath.get(s.audioPath) : undefined;
+    // La grabación completa guardada en Storage es la principal; la del micrófono queda de respaldo.
+    if (full) s.audioUrl = full;
+    if (mic) {
+      if (s.audioUrl) s.capture = { ...(s.capture ?? { prospectVoice: "", transcribed: false }), micAudioUrl: mic };
+      else s.audioUrl = mic;
+    }
   }
 }
 

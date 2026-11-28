@@ -304,7 +304,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setMyOffer: (o) => {
         setMyOfferState(o);
         saveLocal("sparring.myOffer", o);
-        persist("tu empresa y lo que vendes", (sb, orgId) => sb.from("organizations").update({ offer_company: o.company, offer_product: o.product }).eq("id", orgId));
+        persist("tu empresa y lo que vendes", async (sb, orgId) => {
+          const base = await sb.from("organizations").update({ offer_company: o.company, offer_product: o.product }).eq("id", orgId);
+          if (base.error) return base;
+          // Sin el script 0005 la columna no existe: se guarda lo básico igualmente.
+          const details = await sb.from("organizations").update({ offer_details: { price: o.price ?? "", terms: o.terms ?? "", advantages: o.advantages ?? "" } }).eq("id", orgId);
+          if (details.error) console.warn("offer_details no guardado (¿falta el script 0005?)", details.error);
+          return base;
+        });
       },
       setMinuteLimit: (repId, minutes) => {
         const value = Math.max(0, Math.round(minutes));

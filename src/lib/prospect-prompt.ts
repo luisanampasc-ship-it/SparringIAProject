@@ -1,4 +1,4 @@
-import type { CallType, Persona } from "./types";
+import type { CallType, MyOffer, Persona } from "./types";
 
 /*
  * Guion del prospecto para el agente de voz (ElevenLabs).
@@ -28,28 +28,61 @@ const CALL_CONTEXT: Record<CallType, { context: string; firstMessage: string }> 
   },
 };
 
-export function buildProspectPrompt(persona: Persona, difficulty: Difficulty, callType: CallType) {
+const AUTHORITY: Record<NonNullable<Persona["authority"]>, string> = {
+  decide: "Tú decides la compra: si te convence, puedes cerrar en esta misma llamada.",
+  propone: "No decides solo: si te convence, tendrás que proponerlo a tu jefe o a un comité; pide al comercial material o argumentos para defenderlo internamente.",
+  informa: "No tienes poder de decisión: solo recoges información para tu jefe. No puedes comprometerte a nada; como mucho, a pasar la información o a organizar una reunión con quien decide.",
+};
+
+export function buildProspectPrompt(persona: Persona, difficulty: Difficulty, callType: CallType, sellerOffer?: MyOffer) {
   const c = persona.companyInfo;
-  const company = c?.relation === "cliente" ? `${c.name}${c.sector && c.sector !== "Por confirmar" ? `, empresa del rubro ${c.sector.toLowerCase()}` : ""}` : persona.company;
+  const consumer = persona.segment === "B2C";
+  const company =
+    c?.relation === "cliente" ? `${c.name}${c.sector && c.sector !== "Por confirmar" ? `, empresa del rubro ${c.sector.toLowerCase()}` : ""}` : persona.company;
+  const product = persona.offer || sellerOffer?.product;
+  const offerLines = [
+    product ? `Producto o servicio que te ofrece: ${product}.` : "",
+    sellerOffer?.company ? `Empresa del comercial: ${sellerOffer.company}.` : "",
+    sellerOffer?.price ? `Precio de referencia (tú NO lo conoces de antemano: no lo menciones hasta que el comercial lo diga): ${sellerOffer.price}.` : "",
+    sellerOffer?.terms ? `Condiciones que el comercial puede ofrecer: ${sellerOffer.terms}.` : "",
+    sellerOffer?.advantages ? `Ventajas que el comercial suele destacar: ${sellerOffer.advantages}.` : "",
+  ].filter(Boolean);
+
   const lines = [
-    `Eres ${persona.name}, ${persona.role.toLowerCase()} en ${company}. Estás en una llamada de ventas: un comercial intenta venderte algo.`,
-    persona.offer ? `El comercial te va a ofrecer: ${persona.offer}.` : "",
+    consumer
+      ? `Eres ${persona.name}, ${persona.role.toLowerCase()}: una persona particular a la que un comercial intenta venderle algo.`
+      : `Eres ${persona.name}, ${persona.role.toLowerCase()} en ${company}. Un comercial intenta venderle algo a tu empresa.`,
     `Tu situación: ${persona.situation ?? persona.description}`,
     c?.relation === "cliente" && c.offering.length ? `Tu empresa vende: ${c.offering.join(", ")}.` : "",
-    persona.personality ? `Tu personalidad: ${persona.personality}.` : "",
-    persona.objections.length ? `Objeciones que tienes y que debes sacar de forma natural a lo largo de la conversación (no todas de golpe): ${persona.objections.map((o) => `"${o}"`).join("; ")}.` : "",
+    persona.personality ? `Tu personalidad: ${persona.personality.replace(/\.+$/, "")}.` : "",
+    !consumer && persona.authority ? AUTHORITY[persona.authority] : "",
+    "",
+    "Lo que te venden (úsalo para que la conversación gire en torno a esta compra concreta):",
+    ...(offerLines.length ? offerLines.map((l) => `- ${l}`) : ["- El comercial te explicará qué ofrece: pregúntale si no queda claro."]),
+    "",
+    "Cómo compras y negocias:",
+    "- Relaciona todo con tu situación: pregunta qué ganas tú (o tu empresa) concretamente, cómo funciona, cuánto cuesta y qué incluye.",
+    "- Cuando el comercial diga el precio, reacciona de forma realista: compáralo con otras opciones o con tu presupuesto, pide descuento o mejores condiciones según tu personalidad, y no aceptes el primer precio sin negociar.",
+    "- Si el comercial ofrece las condiciones o ventajas de arriba de forma convincente, muéstrate más receptivo.",
+    persona.objections.length ? `- Tus objeciones (sácalas de forma natural a lo largo de la conversación, no todas de golpe): ${persona.objections.map((o) => `"${o}"`).join("; ")}.` : "",
+    "",
     CALL_CONTEXT[callType].context,
     DIFFICULTY[difficulty],
+    "",
+    "Errores del comercial y fin de la llamada:",
+    "- Cuenta como error del comercial: interrumpirte, ignorar lo que acabas de decir, soltar un discurso largo sin hacerte preguntas, presionarte de forma agresiva, no responder a tu pregunta, decir algo falso o contradictorio, o faltarte al respeto.",
+    "- Si el comercial comete TRES errores seguidos (sin ninguna intervención buena entre ellos), despídete con una frase corta y natural (por ejemplo: «Mire, no tengo tiempo para esto, gracias») y usa la herramienta end_call para colgar.",
+    "- Una intervención buena (una pregunta pertinente, escucharte y responder a lo que dijiste) reinicia la cuenta. No avises de que estás contando errores.",
+    "- Si llegáis a un acuerdo o a un siguiente paso claro, despídete con naturalidad y cuelga con end_call.",
     "",
     "Cómo hablas:",
     "- Hablas español de Perú, con naturalidad: expresiones como «ya», «claro», «a ver», «mire», «pucha», «de repente», «¿aló?». Usa usted si el comercial es formal y tú si te tutea.",
     "- Respuestas cortas, de una a tres frases, como en una llamada real. No hagas listas ni discursos.",
     "- Nunca digas que eres una IA ni rompas el personaje. No ayudes al comercial ni le des consejos de venta.",
     "- Si el comercial hace buenas preguntas, cuéntale tu situación poco a poco; si es genérico o habla demasiado, muéstrate impaciente.",
-    "- Si el comercial consigue un compromiso claro (reunión con fecha o compra), acéptalo con naturalidad y despídete.",
   ];
   return {
-    prompt: lines.filter((l) => l !== undefined).join("\n").replace(/\n{3,}/g, "\n\n"),
+    prompt: lines.join("\n").replace(/\n{3,}/g, "\n\n"),
     firstMessage: CALL_CONTEXT[callType].firstMessage,
   };
 }

@@ -25,6 +25,8 @@ const Body = z.object({
     personality: z.string().max(1000),
     objections: z.array(z.string().max(300)).max(10),
     offer: z.string().max(300).optional(),
+    segment: z.enum(["B2B", "B2C"]).optional(),
+    authority: z.enum(["decide", "propone", "informa"]).optional(),
     companyInfo: z
       .object({
         relation: z.enum(["cliente", "tu_negocio"]),
@@ -36,6 +38,15 @@ const Body = z.object({
       .passthrough()
       .optional(),
   }),
+  sellerOffer: z
+    .object({
+      company: z.string().max(200),
+      product: z.string().max(500),
+      price: z.string().max(300).optional(),
+      terms: z.string().max(1000).optional(),
+      advantages: z.string().max(2000).optional(),
+    })
+    .optional(),
   difficulty: z.enum(["facil", "medio", "dificil"]),
   callType: z.enum(["cold_call", "cualificacion", "videollamada"]),
   // En modo demo lo envía el cliente; con Supabase se calcula en el servidor.
@@ -54,7 +65,7 @@ export async function POST(req: Request) {
   if (remaining <= 0) return Response.json({ error: "Has alcanzado tu límite mensual de minutos." }, { status: 403 });
 
   const persona = parsed.data.persona as unknown as Persona;
-  const { prompt, firstMessage } = buildProspectPrompt(persona, difficulty, callType);
+  const { prompt, firstMessage } = buildProspectPrompt(persona, difficulty, callType, parsed.data.sellerOffer);
   try {
     const agentId = await getAgentId();
     const [voice, token] = await Promise.all([getVoice(persona.gender), getConversationToken(agentId, "comercial")]);
