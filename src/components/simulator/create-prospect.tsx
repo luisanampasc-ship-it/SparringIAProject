@@ -348,7 +348,12 @@ function WebModal({ kind, open, onClose }: { kind: "client" | "own"; open: boole
       {kind === "client" && (
         <label className="mt-4 block text-xs text-muted">
           ¿Qué le vas a vender?
-          <input className={input} value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Ej.: Software de gestión de inventarios" />
+          <input className={input} value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Ej.: Software de gestión de inventarios" list="catalogo-productos" />
+          <datalist id="catalogo-productos">
+            {(myOffer.catalog ?? []).map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
+          </datalist>
           <span className="mt-1 block text-[11px] text-faint">Define con quién hablarás (por ejemplo, RR. HH. o Compras) y sus objeciones. El valor por defecto se cambia en Cuenta.</span>
         </label>
       )}
