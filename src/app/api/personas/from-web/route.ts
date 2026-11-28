@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { detectGender, detectSector, pickName } from "@/lib/persona-generator";
+import { detectGender, detectSector, generateRandomB2C, pickName } from "@/lib/persona-generator";
 import { buyerFor, detectSize, objectionsFor, personalityFor, productsFrom, SIZE_LABEL } from "@/lib/sales-context";
 import type { Gender } from "@/lib/types";
 import { requireUser } from "@/lib/supabase/guard";
@@ -27,6 +27,10 @@ const Body = z.object({
   gender: z.enum(["masculino", "femenino"]).optional(),
   contactSource: z.enum(["linkedin", "otra"]).optional(),
   sellerCompany: z.string().max(120).optional(),
+  // Nivel de decisión del interlocutor (web del cliente, B2B).
+  authority: z.enum(["decide", "propone", "informa"]).optional(),
+  // Desde tu web: "B2C" genera un cliente particular ideal y aleatorio.
+  segment: z.enum(["B2B", "B2C"]).optional(),
 });
 
 const Analysis = z.object({
@@ -58,12 +62,14 @@ function siteDigest(site: ScrapedSite) {
   return `Menú y enlaces de la portada: ${site.navLabels.join(" · ")}\n\n${pages}`;
 }
 
-async function analyzeWithClaude(site: ScrapedSite, kind: "client" | "own", offer: string, seller: string, contactRole?: string): Promise<AnalysisT | null> {
+async function analyzeWithClaude(site: ScrapedSite, kind: "client" | "own", offer: string, seller: string, contactRole?: string, consumer?: boolean, seed?: string): Promise<AnalysisT | null> {
   const client = new Anthropic();
   const goal =
     kind === "client"
       ? `La web es de una EMPRESA A LA QUE UN COMERCIAL QUIERE VENDER. El comercial trabaja en "${seller}" y vende: "${offer}". El prospecto es la persona que, en una empresa de ese tamaño, decidiría comprar eso (en una gran empresa, el responsable del área correspondiente, no el gerente general; en una pyme, el dueño o gerente). Las objeciones deben ser las de esa persona ante esa oferta.${contactRole ? ` El comercial ya sabe que hablará con alguien cuyo cargo es "${contactRole}": usa ese cargo y escribe la situación desde ese puesto.` : ""}`
-      : "La web es del PROPIO NEGOCIO del comercial. El prospecto es su CLIENTE IDEAL: alguien que compraría lo que esta empresa vende. Las objeciones son las de ese cliente antes de comprar.";
+      : `La web es del PROPIO NEGOCIO del comercial. El prospecto es su CLIENTE IDEAL: alguien que compraría lo que esta empresa vende. Las objeciones son las de ese cliente antes de comprar.${
+          consumer ? ` El cliente es una PERSONA PARTICULAR (B2C), no una empresa: segment "B2C", cargo "Cliente particular" o "Clienta particular". Elige un perfil variado y concreto (edad, ocupación, situación) en lugar del más obvio (variación ${seed?.slice(0, 8)}).` : ""
+        }`;
   const response = await client.beta.messages.parse({
     model: "claude-opus-5-5",
     max_tokens: 4000,
@@ -160,6 +166,8 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Datos no válidos." }, { status: 400 });
   const { url, kind, contactName, contactRole } = parsed.data;
   const offer = parsed.data.offer?.trim() || "sus productos o servicios";
+  const consumerOwn = kind === "own" && parsed.data.segment === "B2C";
+  const seed = crypto.randomUUID();
   const seller = parsed.data.sellerCompany?.trim() || "su empresa";
 
   let site: ScrapedSite;
@@ -174,7 +182,7 @@ export async function POST(req: Request) {
   let source: "ia" | "reglas" = "reglas";
   if (process.env.ANTHROPIC_API_KEY) {
     try {
-      analysis = await analyzeWithClaude(site, kind, offer, seller, contactRole?.trim() || undefined);
+      analysis = await analyzeWithClaude(site, kind, offer, seller, contactRole?.trim() || undefined, consumerOwn, seed);
       if (analysis) source = "ia";
     } catch (e) {
       // Si la IA falla (límite, red…), seguimos con las reglas para no bloquear al comercial.
@@ -183,6 +191,14 @@ export async function POST(req: Request) {
     }
   }
   analysis ??= analyzeWithRules(site, kind, offer);
+  // Desde tu web en B2C sin IA: cliente particular aleatorio a partir de lo que vende tu negocio.
+  if (consumerOwn && source === "reglas") {
+    const c = generateRandomB2C(
+      { activities: analysis.offering.length ? analysis.offering.join(", ") : analysis.summary, gender: parsed.data.gender, seed },
+      { id: "", name: "", role: "", company: "", sector: "", tags: [], segment: "B2C", description: "", personality: "", objections: [], createdBy: "" },
+    );
+    analysis.persona = { ...analysis.persona, gender: c.gender!, fictitiousName: c.name, role: c.role, segment: "B2C", situation: c.situation!, personality: c.personality, objections: c.objections };
+  }
 
   // Nombre: el contacto escrito por el comercial > un decisor publicado en la web > nombre ficticio.
   const webContact = kind === "client" && !contactName?.trim() ? analysis.teamMembers.find((m) => DECISION.test(m.role)) : undefined;
@@ -194,8 +210,8 @@ export async function POST(req: Request) {
   // Con un nombre real no adivinamos el sexo a partir del nombre: si no se indica ni se deduce del cargo, queda sin definir.
   const gender: Gender | undefined = parsed.data.gender ?? (realName ? detectGender(role) : analysis.persona.gender);
   // Si el nombre es ficticio y el comercial eligió el sexo, el nombre debe concordar.
-  const finalName = !realName && parsed.data.gender && parsed.data.gender !== analysis.persona.gender ? pickName(parsed.data.gender, `${site.host}${kind}`) : name;
-  const company = kind === "client" ? analysis.companyName : `Cliente ideal de ${analysis.companyName}`;
+  const finalName = !realName && parsed.data.gender && parsed.data.gender !== analysis.persona.gender ? pickName(parsed.data.gender, `${site.host}${kind}${seed}`) : name;
+  const company = kind === "client" ? analysis.companyName : consumerOwn ? "Particular" : `Cliente ideal de ${analysis.companyName}`;
   // Sin IA, si el comercial indicó el cargo del contacto, la situación se redacta desde ese cargo.
   if (source === "reglas" && kind === "client" && contactRole?.trim()) {
     const kpi = buyerFor(offer, analysis.companySize).kpi;
@@ -212,14 +228,16 @@ export async function POST(req: Request) {
       company,
       sector: analysis.sector,
       tags: [analysis.sector],
-      segment: analysis.persona.segment,
+      segment: consumerOwn ? "B2C" : kind === "client" ? "B2B" : analysis.persona.segment,
+      authority: kind === "client" ? parsed.data.authority : undefined,
       description: analysis.persona.situation,
       situation: analysis.persona.situation,
       personality: analysis.persona.personality.replace(/\.+$/, ""),
       objections: analysis.persona.objections.slice(0, 3),
       realName,
       nameSource,
-      offer: kind === "client" ? offer : undefined,
+      // Desde tu web: lo que vende tu negocio, para que el prospecto sepa qué le ofrecen.
+      offer: kind === "client" ? offer : analysis.offering.length ? analysis.offering.join(", ") : undefined,
       companyInfo: {
         relation: kind === "client" ? "cliente" : "tu_negocio",
         name: analysis.companyName,

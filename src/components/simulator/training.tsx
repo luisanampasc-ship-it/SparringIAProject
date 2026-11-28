@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
+import { Check, Hand, Mic, MicOff, Phone, PhoneOff, Play, Users, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/app-state";
@@ -26,19 +26,19 @@ const DIFFICULTIES: { id: Difficulty; label: string; sub: string; dot: string }[
   { id: "dificil", label: "Difícil", sub: "Escéptico y resistente", dot: "bg-bad" },
 ];
 
-const CALL_CARDS: { id: CallType; icon: React.ElementType; title: string; en: string; time: string; intensity: string; intensityCls: string; text: string; checks: string[] }[] = [
+const CALL_CARDS: { id: CallType; icon: React.ElementType; title: string; en: string; intensity: string; intensityCls: string; text: string; checks: string[] }[] = [
   {
-    id: "cold_call", icon: Phone, title: "Llamada en frío", en: "Cold call", time: "5-10 min", intensity: "ALTA", intensityCls: "text-bad",
+    id: "cold_call", icon: Phone, title: "Llamada en frío", en: "Cold call", intensity: "ALTA", intensityCls: "text-bad",
     text: "No te conoce ni sabe por qué llamas. Tienes diez segundos para captar su atención y conseguir una reunión o la venta.",
     checks: ["Apertura en 10 segundos", "Gancho relevante y directo", "Manejar el rechazo inicial", "Agendar o cerrar en la llamada"],
   },
   {
-    id: "cualificacion", icon: Users, title: "Llamada de cualificación", en: "Inbound / qualification", time: "15-20 min", intensity: "MEDIA", intensityCls: "text-warn",
+    id: "cualificacion", icon: Users, title: "Llamada de cualificación", en: "Inbound / qualification", intensity: "MEDIA", intensityCls: "text-warn",
     text: "Dejó sus datos en un formulario o en redes. Sabe quién eres, pero nunca habéis hablado. Cualifica el encaje y agenda la reunión de cierre.",
     checks: ["Preguntar por qué dejó sus datos", "Entender la situación actual", "Cualificar el encaje", "Agendar la videollamada de cierre"],
   },
   {
-    id: "videollamada", icon: Video, title: "Videollamada de cierre", en: "Demo / closing call", time: "30-40 min", intensity: "BAJA", intensityCls: "text-good",
+    id: "videollamada", icon: Video, title: "Videollamada de cierre", en: "Demo / closing call", intensity: "BAJA", intensityCls: "text-good",
     text: "Reservó la reunión en tu agenda y ya hubo un primer contacto. Rompe el hielo, haz el diagnóstico, presenta y cierra.",
     checks: ["Romper el hielo", "Diagnóstico de situación y objetivo", "Pitch adaptado a sus dolores", "Cerrar en la misma llamada"],
   },
@@ -54,7 +54,7 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
       open
       wide
       onClose={onClose}
-      title="Configurar entrenamiento"
+      title="Seleccionar tipo de entrenamiento"
       subtitle={
         <>
           Practicando con <span className="font-medium text-primary-text">{persona.name}</span> — elige cómo quieres entrenar
@@ -112,8 +112,8 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
             <div className="flex items-start justify-between">
               <c.icon className="size-6 text-primary" />
               <span className="text-right text-[10px] text-faint">
-                <span className="flex items-center gap-1"><Clock className="size-3" /> {c.time}</span>
-                <span className={cn("font-bold", c.intensityCls)}>{c.intensity}</span>
+                {/* Sin duración orientativa: la idea es cumplir el objetivo en el menor tiempo posible. */}
+                <span className={cn("font-bold", c.intensityCls)}>Intensidad {c.intensity.toLowerCase()}</span>
               </span>
             </div>
             <p className="mt-2 text-sm font-semibold text-text">{c.title}</p>
@@ -200,7 +200,7 @@ function createRecognition(): Recognition | null {
 
 /** Pantalla de pre-llamada + llamada en vivo (modo demo). */
 export function CallScreen({ persona, config, onExit }: { persona: Persona; config: { difficulty: Difficulty; callType: CallType }; onExit: () => void }) {
-  const { spendCredits, addSession, updateSession, uploadRecording, rubrics, pushNotification, toast, sessions, minuteLimits } = useApp();
+  const { spendCredits, addSession, updateSession, uploadRecording, rubrics, pushNotification, toast, sessions, minuteLimits, myOffer } = useApp();
   const router = useRouter();
   const [phase, setPhase] = useState<"ready" | "live" | "ending">("ready");
   const [seconds, setSeconds] = useState(0); // duración total de la llamada
@@ -221,6 +221,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
   const elevenVoice = useRef("");
   const ended = useRef(false);
   const conversationId = useRef<string | null>(null);
+  const endedByProspect = useRef(false);
   // Grabación del micrófono del comercial (en modo demo es la única; con ElevenLabs, respaldo).
   const recorder = useRef<MediaRecorder | null>(null);
   const recordedUrl = useRef<string | undefined>(undefined);
@@ -410,7 +411,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       const res = await fetch("/api/voice/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ persona, difficulty: config.difficulty, callType: config.callType, remainingMinutes: remainingMin }),
+        body: JSON.stringify({ persona, sellerOffer: myOffer, difficulty: config.difficulty, callType: config.callType, remainingMinutes: remainingMin }),
       });
       if (res.status === 501) return null;
       const data = await res.json();
@@ -463,6 +464,11 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       onDisconnect: (details) => {
         if (details.reason !== "user" && live.current) {
           if (details.reason === "error") toast(`Se cortó la llamada: ${details.message}`);
+          else {
+            // El prospecto colgó (end_call): por haber llegado a un acuerdo o tras tres errores seguidos.
+            endedByProspect.current = true;
+            toast("El prospecto colgó la llamada");
+          }
           hangUp();
         }
       },
@@ -648,6 +654,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
           micAudioUrl: conversationId.current ? recordedUrl.current : undefined,
           audioNote: conversationId.current ? "Grabación completa de la llamada (tú y el prospecto)." : "Grabación de tu micrófono: en modo demo la voz del prospecto no se graba.",
           conversationId: conversationId.current ?? undefined,
+          endedByProspect: endedByProspect.current || undefined,
         },
         // Con ElevenLabs, la grabación completa se descarga de su servidor; en modo demo, la del micrófono.
         audioUrl: conversationId.current ? `/api/voice/audio?conversationId=${encodeURIComponent(conversationId.current)}` : recordedUrl.current,

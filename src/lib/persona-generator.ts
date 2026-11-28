@@ -1,4 +1,5 @@
-import type { Gender, Persona } from "./types";
+import { buyerFor, objectionsFor, personalityFor, SIZE_LABEL } from "./sales-context";
+import type { Authority, CompanySize, Gender, Persona } from "./types";
 
 /*
  * Generación de prospectos en modo demo: lee la descripción con reglas sencillas
@@ -152,5 +153,108 @@ export function generateFromOwnWeb(url: string, base: Persona): Persona {
     description: `Cliente ideal para ${brand} (${host}), generado a partir de tu propia web: qué vendes, tu propuesta de valor y tus precios. Representa al tipo de comprador que más encaja con tu oferta y las dudas que suele tener antes de comprar.`,
     personality: "Interesado pero compara opciones; valora casos de éxito.",
     objections: ["¿Por qué vosotros y no la competencia?", "Es más caro de lo que esperaba", "Déjame pensarlo"],
+  };
+}
+
+/* ---------------------------------------------------------------- */
+/* Clientes aleatorios (sin IA). Con ANTHROPIC_API_KEY los genera Claude en /api/personas/random. */
+/* ---------------------------------------------------------------- */
+
+const COMPANY_PREFIX = ["Grupo", "Corporación", "Inversiones", "Servicios", "Comercial", "Industrias", "Distribuidora"];
+const COMPANY_NAME = ["Andino", "Pacífico", "del Sur", "Inca", "Costa Verde", "Los Olivos", "Miraflores", "San Martín", "Altamira", "Nova", "Horizonte", "Imperial"];
+
+function rand(seed: string) {
+  let h = hash(seed) || 1;
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0) / 4294967296;
+  };
+}
+function choose<T>(r: () => number, xs: T[]) {
+  return xs[Math.floor(r() * xs.length)];
+}
+
+const AUTHORITY_ROLE: Record<Authority, { m: string; f: string }> = {
+  decide: { m: "Gerente general", f: "Gerente general" },
+  propone: { m: "Jefe de área", f: "Jefa de área" },
+  informa: { m: "Analista de compras", f: "Analista de compras" },
+};
+
+export function generateRandomB2B(opts: { sector: string; offer: string; role?: string; authority?: Authority; gender?: Gender; seed: string }, base: Persona): Persona {
+  const r = rand(opts.seed);
+  const gender = opts.gender ?? (r() < 0.5 ? "masculino" : "femenino");
+  const size = choose(r, ["pyme", "mediana", "grande"] as CompanySize[]);
+  const sector = opts.sector.trim() || "Servicios profesionales";
+  const company = `${choose(r, COMPANY_PREFIX)} ${choose(r, COMPANY_NAME)}`;
+  const buyer = buyerFor(opts.offer, size);
+  const authority = opts.authority ?? (size === "pyme" ? "decide" : "propone");
+  // El cargo debe concordar con el nivel de decisión (un dueño no "propone a un superior").
+  const role =
+    opts.role?.trim() ||
+    (authority === "decide"
+      ? size === "pyme"
+        ? gender === "masculino" ? "Dueño" : "Dueña"
+        : AUTHORITY_ROLE.decide[gender === "masculino" ? "m" : "f"]
+      : authority === "propone"
+        ? buyer.role.replace(/^Dueño o gerente general$/, gender === "masculino" ? "Jefe de área" : "Jefa de área")
+        : AUTHORITY_ROLE.informa[gender === "masculino" ? "m" : "f"]);
+  return {
+    ...base,
+    gender,
+    name: pickName(gender, `${opts.seed}-b2b`),
+    role,
+    company,
+    sector,
+    tags: [sector, "Aleatorio"],
+    segment: "B2B",
+    situation: `Trabaja en ${company}, una ${SIZE_LABEL[size].toLowerCase()} del rubro ${sector.toLowerCase()}. Recibe propuestas de proveedores a menudo y solo dedica tiempo a las que mejoran ${buyer.kpi}.`,
+    description: `${company} · ${sector} · ${SIZE_LABEL[size]}`,
+    personality: personalityFor(size).replace(/\.$/, ""),
+    objections: objectionsFor(opts.offer, size),
+    offer: opts.offer,
+    authority,
+    nameSource: "ficticio",
+    realName: false,
+  };
+}
+
+const CONSUMER_PROFILES = [
+  { who: { m: "profesional independiente", f: "profesional independiente" }, age: [28, 45], worry: "le cuesta encontrar tiempo y quiere algo que se adapte a su agenda" },
+  { who: { m: "padre de familia", f: "madre de familia" }, age: [32, 50], worry: "cuida mucho el presupuesto familiar y compara antes de comprar" },
+  { who: { m: "joven profesional", f: "joven profesional" }, age: [23, 32], worry: "busca buena relación calidad-precio y lee opiniones en redes" },
+  { who: { m: "empleado de oficina", f: "empleada de oficina" }, age: [30, 55], worry: "quiere una solución práctica y sin complicaciones" },
+  { who: { m: "emprendedor", f: "emprendedora" }, age: [27, 48], worry: "valora lo que le ayude a crecer, pero desconfía de las promesas rápidas" },
+];
+const CONSUMER_PERSONALITY = [
+  "Amable pero desconfiado; necesita pruebas y opiniones de otros clientes",
+  "Directo y con prisa; quiere saber el precio cuanto antes",
+  "Indeciso; le cuesta decidir y suele decir que lo va a pensar",
+  "Entusiasta, pero cuida mucho su dinero",
+];
+
+export function generateRandomB2C(opts: { activities: string; gender?: Gender; seed: string }, base: Persona): Persona {
+  const r = rand(opts.seed);
+  const gender = opts.gender ?? (r() < 0.5 ? "masculino" : "femenino");
+  const p = choose(r, CONSUMER_PROFILES);
+  const age = p.age[0] + Math.floor(r() * (p.age[1] - p.age[0]));
+  const activities = opts.activities.trim().replace(/\.$/, "");
+  const sector = detectSector(activities) ?? "Consumo";
+  const who = gender === "masculino" ? p.who.m : p.who.f;
+  return {
+    ...base,
+    gender,
+    name: pickName(gender, `${opts.seed}-b2c`),
+    role: gender === "masculino" ? "Cliente particular" : "Clienta particular",
+    company: "Particular",
+    sector,
+    tags: [sector, "Aleatorio"],
+    segment: "B2C",
+    situation: `${age} años, ${who}. Está interesad${gender === "masculino" ? "o" : "a"} en lo que ofreces (${activities.slice(0, 140)}) y ${p.worry}.`,
+    description: `${age} años, ${who}.`,
+    personality: choose(r, CONSUMER_PERSONALITY),
+    objections: ["Está un poco caro para mí", "Lo tengo que pensar / consultar en casa", "¿Y si no me funciona?"],
+    offer: activities,
+    nameSource: "ficticio",
+    realName: false,
   };
 }

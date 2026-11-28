@@ -92,7 +92,7 @@ Los puntos donde hoy hay simulación están marcados en el código con comentari
    - Con `ANTHROPIC_API_KEY` usa Claude para extraer rubro, qué vende, a quién y el equipo directivo publicado; sin la clave usa reglas sencillas.
    - Nombre del prospecto: el contacto que escriba el comercial > un directivo que aparezca en la web > nombre ficticio. Si es un nombre real, la descripción indica que se basa en información pública y que la personalidad y las objeciones son simuladas.
    - **Pendiente (fase 2): Apollo.** Conectar un proveedor de datos B2B (Apollo u otro similar, con API de pago) para obtener decisores reales a partir del dominio. No se extraen datos de LinkedIn porque sus condiciones lo prohíben.
-5. **Exportar PDF** con `@react-pdf/renderer` (hoy usa la impresión del navegador).
+5. **Exportar PDF** (hecho): transcripción o informe completo, generados en el navegador con `@react-pdf/renderer` (`src/components/calls/pdf-report.tsx`). Pendiente: logo de la organización en la cabecera.
 6. **Integraciones**: webhook `/api/ingest` con API key, OAuth de Zoom/HubSpot, alertas en Slack.
 7. **Créditos y pagos** con Stripe.
 8. **Insights semanales** del Dashboard con un Vercel Cron; los párrafos interpretativos de `src/lib/insights.ts` pueden pasar a generarse con un LLM.

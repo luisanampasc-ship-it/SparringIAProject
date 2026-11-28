@@ -43,9 +43,12 @@ export interface Persona {
   nameSource?: NameSource;
   /** Lo que el comercial le iba a vender cuando se creó el prospecto. */
   offer?: string;
+  /** Nivel de decisión en la compra (B2B): decide, propone a un superior o solo recoge información. */
+  authority?: Authority;
 }
 
 export type CompanySize = "pyme" | "mediana" | "grande";
+export type Authority = "decide" | "propone" | "informa";
 export type NameSource = "linkedin" | "otra" | "web" | "ficticio";
 
 export interface CompanyInfo {
@@ -68,6 +71,12 @@ export interface CompanyInfo {
 export interface MyOffer {
   company: string;
   product: string;
+  /** Precio de referencia (texto libre, p. ej. "S/ 1,200 por persona"). */
+  price?: string;
+  /** Condiciones: formas de pago, plazos, garantías… */
+  terms?: string;
+  /** Ventajas o diferenciales principales. */
+  advantages?: string;
 }
 
 export interface TranscriptLine {
@@ -171,6 +180,10 @@ export interface Session {
     audioNote?: string;
     /** Id de la conversación en ElevenLabs (para descargar su grabación). */
     conversationId?: string;
+    /** Copia permanente de la grabación completa en Supabase Storage. */
+    fullAudioPath?: string;
+    /** true si fue el prospecto quien colgó (acuerdo o tres errores seguidos del comercial). */
+    endedByProspect?: boolean;
   };
 }
 

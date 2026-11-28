@@ -64,7 +64,7 @@ export default function CuentaPage() {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Tu empresa y lo que vendes"
-            subtitle="Lo usamos al crear prospectos desde la web de un cliente: decide con quién hablarás (por ejemplo, RR. HH. o Compras) y qué objeciones pondrá."
+            subtitle="La IA lo usa para elegir con quién hablarás, preparar sus objeciones y negociar contigo durante la llamada."
           />
           <div className="grid gap-3 p-5 md:grid-cols-3">
             <label className="block text-xs text-muted">
@@ -75,8 +75,26 @@ export default function CuentaPage() {
               Qué vendes
               <input className={input} value={offer.product} onChange={(e) => setOffer((o) => ({ ...o, product: e.target.value }))} placeholder="Ej.: Software de gestión de inventarios para tiendas" />
             </label>
+            <label className="block text-xs text-muted">
+              Precio de referencia
+              <input className={input} value={offer.price ?? ""} onChange={(e) => setOffer((o) => ({ ...o, price: e.target.value }))} placeholder="Ej.: S/ 1,200 por persona" />
+            </label>
+            <label className="block text-xs text-muted md:col-span-2">
+              Condiciones (pagos, plazos, garantías)
+              <input className={input} value={offer.terms ?? ""} onChange={(e) => setOffer((o) => ({ ...o, terms: e.target.value }))} placeholder="Ej.: hasta 3 cuotas sin intereses, garantía de satisfacción de 30 días" />
+            </label>
+            <label className="block text-xs text-muted md:col-span-3">
+              Ventajas principales
+              <textarea
+                className="mt-1 h-20 w-full resize-y rounded-lg border border-border bg-surface p-3 text-sm text-text outline-none focus:ring-2 focus:ring-primary/30"
+                value={offer.advantages ?? ""}
+                onChange={(e) => setOffer((o) => ({ ...o, advantages: e.target.value }))}
+                placeholder="Ej.: formación práctica con llamadas reales, seguimiento semanal, resultados medibles en 60 días"
+              />
+              <span className="mt-1 block text-[11px] text-faint">El prospecto de IA usará estos datos para negociar: preguntará por el precio, pedirá condiciones y comparará con lo que conoce.</span>
+            </label>
             <div>
-              <Button variant="primary" disabled={!offer.product.trim()} onClick={() => { setMyOffer({ company: offer.company.trim(), product: offer.product.trim() }); toast("Guardado: se usará al crear prospectos"); }}>
+              <Button variant="primary" disabled={!offer.product.trim()} onClick={() => { setMyOffer({ company: offer.company.trim(), product: offer.product.trim(), price: offer.price?.trim(), terms: offer.terms?.trim(), advantages: offer.advantages?.trim() }); toast("Guardado: el prospecto IA lo tendrá en cuenta"); }}>
                 Guardar
               </Button>
             </div>

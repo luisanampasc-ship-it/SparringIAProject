@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { ArrowRight, ChevronDown, Mic, ShieldCheck } from "lucide-react";
+import { Check } from "lucide-react";
 import { useState } from "react";
+import { useApp } from "@/components/app-state";
+import { GroupedBars } from "@/components/charts";
+import { Popover } from "@/components/ui";
 import { ObjectionScript } from "@/components/objection-script";
 import { Interpretation } from "@/components/team";
 import { Avatar, Badge, Card, CardHeader, InfoTip, Pills, ProgressBar, SectionLabel, Segmented } from "@/components/ui";
-import { objectionRanking, recentMoments, skillStats } from "@/lib/analytics";
+import { isClosed, kpis, objectionRanking, recentMoments, skillStats } from "@/lib/analytics";
 import { callTypeLabel, PERSONAS, REPS, skillDescription } from "@/lib/catalog";
 import { oratory, softAverage, softSkills, trustSignals } from "@/lib/insights";
 import { CALL_STRATEGIES, CLIENT_PROFILES } from "@/lib/strategies";
-import type { Session } from "@/lib/types";
+import type { Rep, Session } from "@/lib/types";
 import { cn, pct, scoreTone, toneText } from "@/lib/utils";
 
 /* Pestañas del Centro de Entrenamiento. */
@@ -220,8 +224,13 @@ function List({ title, items, dot }: { title: string; items: string[]; dot: stri
 /* ---------------------------------------------------------------- */
 
 export function Blandas({ sessions }: { sessions: Session[] }) {
+  const { account } = useApp();
   const team = softSkills(sessions);
-  const people = REPS.map((r) => {
+  // Un comercial solo ve sus datos: solo puede compararse consigo mismo. Admin y manager eligen a quién comparar.
+  const available = account?.role === "comercial" ? REPS.filter((r) => r.id === account.userId) : REPS;
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => available.slice(0, 3).map((r) => r.id));
+  const selected = available.filter((r) => selectedIds.includes(r.id));
+  const people = selected.map((r) => {
     const rs = sessions.filter((s) => s.repId === r.id);
     return { rep: r, sessions: rs, soft: softSkills(rs), avg: softAverage(rs), oratory: oratory(rs), trust: trustSignals(rs) };
   });
@@ -235,10 +244,31 @@ export function Blandas({ sessions }: { sessions: Session[] }) {
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
         <ScoreCard label="Equipo" value={teamAvg} sub={`${sessions.length} sesiones analizadas`} />
-        {people.map((p) => (
-          <ScoreCard key={p.rep.id} label={p.rep.name} value={p.avg} sub={`${p.sessions.length} sesiones`} avatar={p.rep.name} />
-        ))}
+        <Card className="p-4 md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-text">Integrantes del equipo</p>
+              <p className="text-[11px] text-faint">Elige hasta 3 personas para comparar su puntuación, habilidades blandas y cierre.</p>
+            </div>
+            <MemberPicker options={available} value={selectedIds} onChange={setSelectedIds} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-4">
+            {people.map((p) => (
+              <div key={p.rep.id} className="flex min-w-40 flex-1 items-center gap-2">
+                <Avatar name={p.rep.name} className="size-8 text-[10px]" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-text">{p.rep.name}</p>
+                  <ProgressBar value={p.avg} className="mt-1" />
+                </div>
+                <span className={cn("text-sm font-bold", toneText[scoreTone(p.avg)])}>{p.sessions.length ? `${p.avg}%` : "—"}</span>
+              </div>
+            ))}
+            {people.length === 0 && <p className="text-xs text-faint">Selecciona al menos un integrante.</p>}
+          </div>
+        </Card>
       </div>
+
+      {people.length > 0 && <MemberComparison people={people} />}
 
       <Card>
         <CardHeader title="Habilidades blandas" subtitle="Nivel aproximado (%) estimado a partir de la transcripción y del tono de voz cuando hay audio" />
@@ -635,5 +665,90 @@ function SkillColumn({ title, items, tone }: { title: string; items: ReturnType<
         ))}
       </div>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Comparativa de integrantes                                       */
+/* ---------------------------------------------------------------- */
+
+const COMPARE_COLORS = ["var(--brand)", "var(--info)", "var(--accent)"];
+const MAX_COMPARE = 3;
+
+/** Desplegable con casillas para elegir hasta 3 integrantes del equipo. */
+function MemberPicker({ options, value, onChange }: { options: Rep[]; value: string[]; onChange: (ids: string[]) => void }) {
+  const toggle = (id: string) => {
+    if (value.includes(id)) onChange(value.filter((x) => x !== id));
+    else if (value.length < MAX_COMPARE) onChange([...value, id]);
+  };
+  return (
+    <Popover
+      className="w-64 p-1"
+      trigger={(open, t) => (
+        <button onClick={t} className="flex h-8 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs text-text hover:bg-surface-2">
+          {value.length ? `${value.length} seleccionad${value.length === 1 ? "o" : "os"}` : "Elegir integrantes"}
+          <ChevronDown className={cn("size-3.5 text-muted transition", open && "rotate-180")} />
+        </button>
+      )}
+    >
+      {() => (
+        <div className="max-h-72 overflow-y-auto">
+          <p className="px-2 py-1.5 text-[10px] text-faint">Hasta {MAX_COMPARE} personas</p>
+          {options.map((r) => {
+            const on = value.includes(r.id);
+            const disabled = !on && value.length >= MAX_COMPARE;
+            return (
+              <button
+                key={r.id}
+                onClick={() => toggle(r.id)}
+                disabled={disabled}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-text hover:bg-surface-2 disabled:opacity-40"
+              >
+                <span className={cn("grid size-4 place-items-center rounded border", on ? "border-primary bg-primary text-on-primary" : "border-border")}>{on && <Check className="size-3" />}</span>
+                <Avatar name={r.name} className="size-6 text-[9px]" />
+                <span className="truncate">{r.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+type Person = { rep: Rep; sessions: Session[]; soft: ReturnType<typeof softSkills>; avg: number };
+
+function MemberComparison({ people }: { people: Person[] }) {
+  const series = people.map((p, i) => ({ key: p.rep.id, name: p.rep.name, color: COMPARE_COLORS[i % COMPARE_COLORS.length] }));
+  const kpiRows = [
+    { label: "Puntuación media", get: (p: Person) => kpis(p.sessions).avgScore },
+    { label: "Tasa de cierre", get: (p: Person) => pct(p.sessions.filter(isClosed).length, p.sessions.length) },
+    { label: "Habilidades blandas", get: (p: Person) => p.avg },
+  ].map((row) => ({ label: row.label, ...Object.fromEntries(people.map((p) => [p.rep.id, row.get(p)])) }));
+  const softRows = (people[0]?.soft ?? []).map((sk) => ({
+    label: sk.name,
+    ...Object.fromEntries(people.map((p) => [p.rep.id, p.soft.find((x) => x.key === sk.key)?.value ?? 0])),
+  }));
+  // Lectura rápida: quién destaca en cada indicador.
+  const leaders = kpiRows.map((row) => {
+    const best = [...people].sort((a, b) => Number(row[b.rep.id as keyof typeof row]) - Number(row[a.rep.id as keyof typeof row]))[0];
+    return `${row.label.toLowerCase()}: ${best.rep.name.split(" ")[0]} (${row[best.rep.id as keyof typeof row]}%)`;
+  });
+
+  return (
+    <Card>
+      <CardHeader title="Comparativa de integrantes" subtitle="Puntuación, cierre y habilidades blandas de las personas seleccionadas en el período" />
+      <div className="grid gap-6 p-5 lg:grid-cols-2">
+        <div>
+          <SectionLabel>Puntuación, cierre y habilidades blandas</SectionLabel>
+          <GroupedBars data={kpiRows} series={series} height={260} />
+        </div>
+        <div>
+          <SectionLabel>Habilidades blandas por integrante</SectionLabel>
+          <GroupedBars data={softRows} series={series} height={Math.max(260, softRows.length * 30 * Math.max(1, people.length * 0.6))} layout="vertical" />
+        </div>
+      </div>
+      {people.length > 1 && <Interpretation title="Quién destaca">Mejor resultado en {leaders.join("; ")}.</Interpretation>}
+    </Card>
   );
 }

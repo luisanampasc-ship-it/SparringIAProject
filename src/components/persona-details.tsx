@@ -38,6 +38,11 @@ export function PersonaDetails({ persona }: { persona: Persona }) {
           {persona.nameSource && <NameSourceBadge source={persona.nameSource} />}
         </p>
         <p className="mt-1 text-muted">{persona.situation ?? persona.description}</p>
+        {persona.authority && (
+          <p className="mt-1 text-xs text-muted">
+            Nivel de decisión: <span className="text-text">{{ decide: "decide la compra", propone: "propone a un superior", informa: "solo recoge información" }[persona.authority]}</span>
+          </p>
+        )}
         {persona.offer && (
           <p className="mt-1 text-xs text-muted">
             Le vas a ofrecer: <span className="text-text">{persona.offer}</span>

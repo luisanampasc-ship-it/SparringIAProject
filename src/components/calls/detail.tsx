@@ -10,12 +10,13 @@ import { Badge, Button, Card, InfoTip, Modal, ProgressBar, ScoreBadge, SectionLa
 import { CALL_TYPES, callTypeLabel, OUTCOMES, REPS, skillDescription } from "@/lib/catalog";
 import type { CallType, Outcome, Session } from "@/lib/types";
 import { cn, formatLongDate, formatTime, scoreTone, toneText } from "@/lib/utils";
+import { downloadSessionPdf, type PdfKind } from "./pdf-report";
 import { WaveformPlayer, type PlayerHandle } from "./player";
 
 export type Tab = "resumen" | "feedback" | "transcripcion";
 
 export function CallDetail({ session, onBack, initialTab = "resumen" }: { session: Session; onBack: () => void; initialTab?: Tab }) {
-  const { rubrics, setOutcome, updateSession, toast, notes, setNote } = useApp();
+  const { rubrics, setOutcome, updateSession, toast, notes, setNote, account } = useApp();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -27,6 +28,24 @@ export function CallDetail({ session, onBack, initialTab = "resumen" }: { sessio
   const rubric = rubrics[session.callType];
 
   useEffect(() => setTab(initialTab), [session.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [exporting, setExporting] = useState<PdfKind | null>(null);
+  const exportPdf = async (kind: PdfKind) => {
+    if (exporting) return;
+    setExporting(kind);
+    try {
+      await downloadSessionPdf(session, kind, {
+        orgName: account?.orgName ?? "",
+        repName: REPS.find((r) => r.id === session.repId)?.name ?? "Sin asignar",
+        rubric,
+      });
+    } catch (e) {
+      console.error(e);
+      toast("No se pudo generar el PDF");
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const copy = (text: string, msg: string) => {
     navigator.clipboard?.writeText(text).then(() => toast(msg), () => toast("No se pudo copiar"));
@@ -200,7 +219,8 @@ export function CallDetail({ session, onBack, initialTab = "resumen" }: { sessio
                   <Action icon={Link2} label="Copiar enlace" onClick={() => copy(`${location.origin}/llamadas?id=${session.id}`, "Enlace copiado")} />
                   <Action icon={Copy} label="Copiar transcripción" onClick={() => copy(session.transcript.map((l) => `${l.speaker === "rep" ? "Comercial" : "Prospecto"}: ${l.text}`).join("\n"), "Transcripción copiada")} />
                   <Action icon={Sparkles} label="Resumen de sesión (IA)" onClick={() => setSummaryOpen((o) => !o)} active={summaryOpen} />
-                  <Action icon={FileDown} label="Exportar PDF" onClick={() => window.print()} />
+                  <Action icon={FileDown} label={exporting === "transcripcion" ? "Generando PDF…" : "Exportar transcripción (PDF)"} onClick={() => exportPdf("transcripcion")} />
+                  <Action icon={FileDown} label={exporting === "informe" ? "Generando PDF…" : "Exportar informe completo (PDF)"} onClick={() => exportPdf("informe")} />
                   <Action icon={Copy} label="Copiar resumen del análisis" onClick={() => copy([a.context, a.overall, a.globalFeedback, a.nextStep].join("\n\n"), "Resumen del análisis copiado")} />
                 </div>
                 {summaryOpen && (
@@ -440,6 +460,11 @@ function Transcript({ session, onSeek }: { session: Session; onSeek: (t: number)
           <p className="mt-0.5 text-xs text-muted">
             {session.capture.transcribed ? "Transcripción de lo que dijiste en el simulador" : "Tu navegador no permitió transcribir tu voz: se muestran tus intervenciones con su duración"} · Voz del prospecto: {session.capture.prospectVoice}
           </p>
+          {session.capture.endedByProspect && (
+            <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
+              El prospecto colgó la llamada: por cerrar un acuerdo o porque detectó tres errores seguidos. Revisa las últimas intervenciones de la transcripción.
+            </p>
+          )}
           {tone && (
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
               <ToneStat label="Ratio de habla" value={`${tone.talkRatio}%`} hint="del tiempo hablaste tú (ideal 40-50%)" />

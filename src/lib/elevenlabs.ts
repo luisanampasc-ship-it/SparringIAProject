@@ -9,6 +9,14 @@ import type { Gender } from "./types";
  */
 
 const AGENT_NAME = "Sparring IA · Prospecto";
+
+/** Herramienta del sistema que permite al prospecto colgar (p. ej. tras 3 errores seguidos del comercial). */
+const END_CALL_TOOL = {
+  type: "system" as const,
+  name: "end_call",
+  description: "Cuelga la llamada. Úsala solo cuando el guion lo indique (por ejemplo, si el comercial comete tres errores seguidos) o cuando la conversación haya terminado con una despedida.",
+  params: { systemToolType: "end_call" as const },
+};
 const TTS_MODEL = "eleven_flash_v2_5"; // multilingüe y de baja latencia
 
 export function elevenLabsEnabled() {
@@ -31,6 +39,14 @@ export async function getAgentId(): Promise<string> {
   const page = await el.conversationalAi.agents.list({ search: AGENT_NAME, pageSize: 10 });
   const existing = page.agents.find((a) => a.name === AGENT_NAME);
   if (existing) {
+    // Los agentes creados antes no tenían la herramienta de colgar: se añade (una vez por arranque).
+    try {
+      await el.conversationalAi.agents.update(existing.agentId, {
+        conversationConfig: { agent: { prompt: { builtInTools: { endCall: END_CALL_TOOL } } } },
+      });
+    } catch (e) {
+      console.error("ElevenLabs: no se pudo activar end_call en el agente", e);
+    }
     cachedAgentId = existing.agentId;
     return existing.agentId;
   }
@@ -41,7 +57,7 @@ export async function getAgentId(): Promise<string> {
       agent: {
         language: "es",
         firstMessage: "¿Aló?",
-        prompt: { prompt: "Eres un prospecto en una llamada de ventas. El guion concreto llega en cada llamada." },
+        prompt: { prompt: "Eres un prospecto en una llamada de ventas. El guion concreto llega en cada llamada.", builtInTools: { endCall: END_CALL_TOOL } },
       },
       tts: { modelId: TTS_MODEL },
     },
