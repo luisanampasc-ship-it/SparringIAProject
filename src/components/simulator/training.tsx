@@ -7,7 +7,7 @@ import { useApp } from "@/components/app-state";
 import { PersonaDetails } from "@/components/persona-details";
 import { VideoCallView } from "@/components/simulator/video-call";
 import { PersonaAvatar } from "@/components/persona-face";
-import { Badge, Button, Modal } from "@/components/ui";
+import { Badge, Button, Modal, Select } from "@/components/ui";
 import { CURRENT_USER } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
 import { simulateAnalyzedSession } from "@/lib/demo-data";
@@ -44,8 +44,14 @@ const CALL_CARDS: { id: CallType; icon: React.ElementType; title: string; en: st
   },
 ];
 
-export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Persona | null; onClose: () => void; onStart: (cfg: { difficulty: Difficulty; callType: CallType }) => void }) {
+export type TrainingConfig = { difficulty: Difficulty; callType: CallType; productId?: string };
+
+export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Persona | null; onClose: () => void; onStart: (cfg: TrainingConfig) => void }) {
+  const { myOffer } = useApp();
+  const catalog = myOffer.catalog ?? [];
   const [difficulty, setDifficulty] = useState<Difficulty>("medio");
+  // Producto de la llamada: por defecto, el del catálogo que coincide con lo que se iba a ofrecer al crear el prospecto.
+  const [productId, setProductId] = useState<string>(() => catalog.find((c) => persona?.offer && c.name.toLowerCase() === persona.offer.toLowerCase())?.id ?? "");
   const [callType, setCallType] = useState<CallType | null>(null);
   const [more, setMore] = useState(false);
   if (!persona) return null;
@@ -63,7 +69,7 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" disabled={!callType} onClick={() => callType && onStart({ difficulty, callType })}>
+          <Button variant="primary" disabled={!callType} onClick={() => callType && onStart({ difficulty, callType, productId: productId || undefined })}>
             <Play className="size-4" /> Iniciar llamada
           </Button>
         </>
@@ -90,6 +96,22 @@ export function TrainingConfigModal({ persona, onClose, onStart }: { persona: Pe
           </div>
         )}
       </div>
+
+      {catalog.length > 0 && (
+        <>
+          <p className="mt-5 mb-2 text-[10px] font-semibold tracking-wider text-faint uppercase">¿Qué le vas a ofrecer?</p>
+          <Select
+            className="w-full [&>select]:w-full"
+            value={productId}
+            onChange={setProductId}
+            options={[
+              { value: "", label: persona.offer ? `Lo indicado al crear el prospecto: ${persona.offer}` : "General (todo el catálogo)" },
+              ...catalog.map((c) => ({ value: c.id, label: `${c.name}${c.price ? ` · ${c.price}` : ""}` })),
+            ]}
+          />
+          <p className="mt-1 text-[11px] text-faint">El prospecto negociará con el precio y las condiciones de este producto o servicio, y conocerá el resto del catálogo.</p>
+        </>
+      )}
 
       <p className="mt-5 mb-2 text-[10px] font-semibold tracking-wider text-faint uppercase">Nivel de dificultad</p>
       <div className="grid gap-2 sm:grid-cols-3">
@@ -199,7 +221,7 @@ function createRecognition(): Recognition | null {
 }
 
 /** Pantalla de pre-llamada + llamada en vivo (modo demo). */
-export function CallScreen({ persona, config, onExit }: { persona: Persona; config: { difficulty: Difficulty; callType: CallType }; onExit: () => void }) {
+export function CallScreen({ persona, config, onExit }: { persona: Persona; config: TrainingConfig; onExit: () => void }) {
   const { spendCredits, addSession, updateSession, uploadRecording, rubrics, pushNotification, toast, sessions, minuteLimits, myOffer } = useApp();
   const router = useRouter();
   const [phase, setPhase] = useState<"ready" | "live" | "ending">("ready");
@@ -411,7 +433,7 @@ export function CallScreen({ persona, config, onExit }: { persona: Persona; conf
       const res = await fetch("/api/voice/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ persona, sellerOffer: myOffer, difficulty: config.difficulty, callType: config.callType, remainingMinutes: remainingMin }),
+        body: JSON.stringify({ persona, sellerOffer: myOffer, focusProductId: config.productId, difficulty: config.difficulty, callType: config.callType, remainingMinutes: remainingMin }),
       });
       if (res.status === 501) return null;
       const data = await res.json();

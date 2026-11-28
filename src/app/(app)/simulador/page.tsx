@@ -5,13 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { useApp } from "@/components/app-state";
 import { CreateProspectMenu } from "@/components/simulator/create-prospect";
-import { CallScreen, TrainingConfigModal, type Difficulty } from "@/components/simulator/training";
+import { CallScreen, TrainingConfigModal, type TrainingConfig } from "@/components/simulator/training";
 import { NameSourceBadge } from "@/components/persona-details";
 import { PersonaAvatar } from "@/components/persona-face";
 import { Badge, Card, Modal, PageHeader, Popover, ProgressBar, Select } from "@/components/ui";
 import { CURRENT_USER, REPS } from "@/lib/catalog";
 import { minutesUsedThisMonth } from "@/lib/insights";
-import type { CallType, Persona } from "@/lib/types";
+import type { Persona } from "@/lib/types";
 
 function SimuladorInner() {
   const { personas, removePersona, addPersona, toast, sessions, minuteLimits } = useApp();
@@ -22,7 +22,7 @@ function SimuladorInner() {
   const [owner, setOwner] = useState("all");
   const [sector, setSector] = useState("all");
   const [configFor, setConfigFor] = useState<Persona | null>(() => personas.find((p) => p.id === params.get("persona")) ?? null);
-  const [call, setCall] = useState<{ persona: Persona; config: { difficulty: Difficulty; callType: CallType } } | null>(null);
+  const [call, setCall] = useState<{ persona: Persona; config: TrainingConfig } | null>(null);
   const [guide, setGuide] = useState(false);
   const focus = params.get("focus");
 

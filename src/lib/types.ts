@@ -70,12 +70,24 @@ export interface CompanyInfo {
 /** Qué vende el comercial: sirve para elegir con quién hablará y qué objeciones pondrá el prospecto. */
 export interface MyOffer {
   company: string;
+  /** Resumen de lo que vende la empresa. */
   product: string;
-  /** Precio de referencia (texto libre, p. ej. "S/ 1,200 por persona"). */
+  /** Precio de referencia general (versión anterior al catálogo; se migra a un producto). */
   price?: string;
-  /** Condiciones: formas de pago, plazos, garantías… */
+  /** Condiciones generales: formas de pago, plazos, garantías… */
   terms?: string;
-  /** Ventajas o diferenciales principales. */
+  /** Ventajas o diferenciales generales. */
+  advantages?: string;
+  /** Catálogo de productos y servicios, cada uno con su precio y condiciones. */
+  catalog?: CatalogItem[];
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  kind: "producto" | "servicio";
+  price: string;
+  terms?: string;
   advantages?: string;
 }
 

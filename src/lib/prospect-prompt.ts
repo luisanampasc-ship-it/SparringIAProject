@@ -34,18 +34,27 @@ const AUTHORITY: Record<NonNullable<Persona["authority"]>, string> = {
   informa: "No tienes poder de decisión: solo recoges información para tu jefe. No puedes comprometerte a nada; como mucho, a pasar la información o a organizar una reunión con quien decide.",
 };
 
-export function buildProspectPrompt(persona: Persona, difficulty: Difficulty, callType: CallType, sellerOffer?: MyOffer) {
+export function buildProspectPrompt(persona: Persona, difficulty: Difficulty, callType: CallType, sellerOffer?: MyOffer, focusProductId?: string) {
   const c = persona.companyInfo;
   const consumer = persona.segment === "B2C";
   const company =
     c?.relation === "cliente" ? `${c.name}${c.sector && c.sector !== "Por confirmar" ? `, empresa del rubro ${c.sector.toLowerCase()}` : ""}` : persona.company;
-  const product = persona.offer || sellerOffer?.product;
+  const catalog = sellerOffer?.catalog ?? [];
+  const focus = catalog.find((c) => c.id === focusProductId);
+  const product = focus ? `${focus.name} (${focus.kind})` : persona.offer || sellerOffer?.product;
+  const price = focus?.price || sellerOffer?.price;
+  const others = catalog.filter((c) => c.id !== focus?.id && c.name);
   const offerLines = [
-    product ? `Producto o servicio que te ofrece: ${product}.` : "",
-    sellerOffer?.company ? `Empresa del comercial: ${sellerOffer.company}.` : "",
-    sellerOffer?.price ? `Precio de referencia (tú NO lo conoces de antemano: no lo menciones hasta que el comercial lo diga): ${sellerOffer.price}.` : "",
-    sellerOffer?.terms ? `Condiciones que el comercial puede ofrecer: ${sellerOffer.terms}.` : "",
-    sellerOffer?.advantages ? `Ventajas que el comercial suele destacar: ${sellerOffer.advantages}.` : "",
+    product ? `Producto o servicio que te ofrece en esta llamada: ${product}.` : "",
+    sellerOffer?.company ? `Empresa del comercial: ${sellerOffer.company}${sellerOffer.product ? ` (${sellerOffer.product})` : ""}.` : "",
+    price ? `Precio de referencia (tú NO lo conoces de antemano: no lo menciones hasta que el comercial lo diga): ${price}.` : "",
+    focus?.terms ? `Condiciones de este producto: ${focus.terms}.` : "",
+    focus?.advantages ? `Ventajas de este producto que el comercial suele destacar: ${focus.advantages}.` : "",
+    sellerOffer?.terms ? `Condiciones generales de la empresa: ${sellerOffer.terms}.` : "",
+    sellerOffer?.advantages ? `Ventajas generales de la empresa: ${sellerOffer.advantages}.` : "",
+    others.length
+      ? `Otros productos o servicios de su catálogo (puedes preguntar por alguno si el principal no te convence o es caro): ${others.map((c) => `${c.name}${c.price ? ` (${c.price})` : ""}`).join("; ")}.`
+      : "",
   ].filter(Boolean);
 
   const lines = [

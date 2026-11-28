@@ -308,7 +308,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           const base = await sb.from("organizations").update({ offer_company: o.company, offer_product: o.product }).eq("id", orgId);
           if (base.error) return base;
           // Sin el script 0005 la columna no existe: se guarda lo básico igualmente.
-          const details = await sb.from("organizations").update({ offer_details: { price: o.price ?? "", terms: o.terms ?? "", advantages: o.advantages ?? "" } }).eq("id", orgId);
+          const details = await sb
+            .from("organizations")
+            .update({ offer_details: { price: o.price ?? "", terms: o.terms ?? "", advantages: o.advantages ?? "", catalog: o.catalog ?? [] } })
+            .eq("id", orgId);
           if (details.error) console.warn("offer_details no guardado (¿falta el script 0005?)", details.error);
           return base;
         });
