@@ -51,6 +51,7 @@ const Analysis = z.object({
     situation: z.string().describe("Situación y retos del prospecto en 2 frases, conectados con lo que vende el comercial"),
     personality: z.string().describe("Personalidad en una frase, sin punto final"),
     objections: z.array(z.string()).describe("3 objeciones realistas y específicas para esta venta y este tamaño de empresa"),
+    interestedIn: z.string().describe("Solo para un cliente particular (B2C): el producto o servicio concreto de la web que le interesa, con su nombre corto. Vacío en otro caso."),
   }),
 });
 type AnalysisT = z.infer<typeof Analysis>;
@@ -63,13 +64,17 @@ function siteDigest(site: ScrapedSite) {
   return `${found ? `Productos y servicios detectados en la web: ${found}\n\n` : ""}Menú y enlaces de la portada: ${site.navLabels.join(" · ")}\n\n${pages}`;
 }
 
-async function analyzeWithClaude(site: ScrapedSite, kind: "client" | "own", offer: string, seller: string, contactRole?: string, consumer?: boolean, seed?: string): Promise<AnalysisT | null> {
+async function analyzeWithClaude(site: ScrapedSite, kind: "client" | "own", offer: string, seller: string, contactRole?: string, consumer?: boolean, seed?: string, focus?: string): Promise<AnalysisT | null> {
   const client = new Anthropic();
   const goal =
     kind === "client"
       ? `La web es de una EMPRESA A LA QUE UN COMERCIAL QUIERE VENDER. El comercial trabaja en "${seller}" y vende: "${offer}". El prospecto es la persona que, en una empresa de ese tamaño, decidiría comprar eso (en una gran empresa, el responsable del área correspondiente, no el gerente general; en una pyme, el dueño o gerente). Las objeciones deben ser las de esa persona ante esa oferta.${contactRole ? ` El comercial ya sabe que hablará con alguien cuyo cargo es "${contactRole}": usa ese cargo y escribe la situación desde ese puesto.` : ""}`
       : `La web es del PROPIO NEGOCIO del comercial. El prospecto es su CLIENTE IDEAL: alguien que compraría lo que esta empresa vende. Las objeciones son las de ese cliente antes de comprar.${
-          consumer ? ` El cliente es una PERSONA PARTICULAR (B2C), no una empresa: segment "B2C", cargo "Cliente particular" o "Clienta particular". Elige un perfil variado y concreto (edad, ocupación, situación) en lugar del más obvio (variación ${seed?.slice(0, 8)}).` : ""
+          consumer ? ` El cliente es una PERSONA PARTICULAR (B2C), no una empresa: segment "B2C", cargo "Cliente particular" o "Clienta particular". Elige un perfil variado y concreto (edad, ocupación, situación) en lugar del más obvio (variación ${seed?.slice(0, 8)}). ${
+              focus
+                ? `Este cliente está interesado concretamente en «${focus}» (ponlo en interestedIn): su situación debe explicar por qué lo necesita o lo está buscando, y sus objeciones deben ser sobre ese producto o servicio.`
+                : "Elige UNO de los productos o servicios concretos de la web (no siempre el primero), ponlo en interestedIn y construye la situación y las objeciones del cliente alrededor de él."
+            }` : ""
         }`;
   const response = await client.beta.messages.parse({
     model: "claude-opus-5-5",
@@ -128,6 +133,7 @@ function analyzeWithRules(site: ScrapedSite, kind: "client" | "own", offer: stri
           (size === "grande" ? "Cualquier compra pasa por el área de Compras y necesita aprobación interna." : size === "pyme" ? "Decide personalmente y cuida cada gasto." : "Decide con su gerente y quiere ver resultados rápidos."),
         personality: personalityFor(size).replace(/\.$/, ""),
         objections: objectionsFor(offer, size),
+        interestedIn: "",
       },
     };
   }
@@ -149,6 +155,7 @@ function analyzeWithRules(site: ScrapedSite, kind: "client" | "own", offer: stri
       situation: `Necesita ${offering[0]?.toLowerCase() ?? "lo que ofrece la empresa"} y está comparando varias opciones antes de decidir. Le preocupa elegir bien y pagar un precio justo.`,
       personality: "Interesado pero prudente; valora casos de éxito y garantías",
       objections: ["¿Por qué vosotros y no la competencia?", "Es más caro de lo que esperaba", "Déjame pensarlo y te digo algo"],
+      interestedIn: "",
     },
   };
 }
@@ -181,11 +188,15 @@ export async function POST(req: Request) {
     return Response.json({ error: msg }, { status: 422 });
   }
 
+  // B2C desde tu web: el cliente se interesa por UNO de los productos o servicios concretos de la web, elegido al azar.
+  const pick = <T,>(list: T[]) => list[parseInt(seed.slice(0, 8), 16) % list.length];
+  let focus = consumerOwn && site.offerings.length ? pick(site.offerings).name : undefined;
+
   let analysis: (AnalysisT & { offeringApprox?: boolean }) | null = null;
   let source: "ia" | "reglas" = "reglas";
   if (process.env.ANTHROPIC_API_KEY) {
     try {
-      analysis = await analyzeWithClaude(site, kind, offer, seller, contactRole?.trim() || undefined, consumerOwn, seed);
+      analysis = await analyzeWithClaude(site, kind, offer, seller, contactRole?.trim() || undefined, consumerOwn, seed, focus);
       if (analysis) source = "ia";
     } catch (e) {
       // Si la IA falla (límite, red…), seguimos con las reglas para no bloquear al comercial.
@@ -194,10 +205,14 @@ export async function POST(req: Request) {
     }
   }
   analysis ??= analyzeWithRules(site, kind, offer);
-  // Desde tu web en B2C sin IA: cliente particular aleatorio a partir de lo que vende tu negocio.
+  if (consumerOwn) {
+    // Sin productos concretos en la web: uno de los detectados (sin precio, que el cliente aún no conoce).
+    focus ??= analysis.persona.interestedIn.trim() || (analysis.offering.length ? pick(analysis.offering).replace(/\s*\([^)]*\)\s*$/, "") : undefined);
+  }
+  // Desde tu web en B2C sin IA: cliente particular aleatorio interesado en ese producto o servicio.
   if (consumerOwn && source === "reglas") {
     const c = generateRandomB2C(
-      { activities: analysis.offering.length ? analysis.offering.join(", ") : analysis.summary, gender: parsed.data.gender, seed },
+      { activities: focus ?? analysis.summary, focus, companyName: analysis.companyName, gender: parsed.data.gender, seed },
       { id: "", name: "", role: "", company: "", sector: "", tags: [], segment: "B2C", description: "", personality: "", objections: [], createdBy: "" },
     );
     analysis.persona = { ...analysis.persona, gender: c.gender!, fictitiousName: c.name, role: c.role, segment: "B2C", situation: c.situation!, personality: c.personality, objections: c.objections };
@@ -240,7 +255,8 @@ export async function POST(req: Request) {
       realName,
       nameSource,
       // Desde tu web: lo que vende tu negocio, para que el prospecto sepa qué le ofrecen.
-      offer: kind === "client" ? offer : analysis.offering.length ? analysis.offering.join(", ") : undefined,
+      // B2C: el producto o servicio concreto que le interesa a este cliente.
+      offer: kind === "client" ? offer : consumerOwn && focus ? focus : analysis.offering.length ? analysis.offering.join(", ") : undefined,
       companyInfo: {
         relation: kind === "client" ? "cliente" : "tu_negocio",
         name: analysis.companyName,

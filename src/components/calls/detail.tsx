@@ -9,7 +9,8 @@ import { ObjectionScript } from "@/components/objection-script";
 import { Badge, Button, Card, InfoTip, Modal, ProgressBar, ScoreBadge, SectionLabel, Select, Tabs } from "@/components/ui";
 import { CALL_TYPES, callTypeLabel, OUTCOMES, REPS, skillDescription } from "@/lib/catalog";
 import type { CallType, Outcome, Session } from "@/lib/types";
-import { cn, formatLongDate, formatTime, scoreTone, toneText } from "@/lib/utils";
+import { cn, formatLongDate, formatTime, scoreTone, toneSoft, toneText } from "@/lib/utils";
+import { toneKind } from "@/lib/voice-tone";
 import { downloadSessionPdf, type PdfKind } from "./pdf-report";
 import { WaveformPlayer, type PlayerHandle } from "./player";
 
@@ -501,7 +502,7 @@ function Transcript({ session, onSeek }: { session: Session; onSeek: (t: number)
                   <p className={cn("flex items-center gap-1 text-[11px] font-semibold", l.speaker === "rep" ? "text-primary-text" : "text-good")}>
                     <User className="size-3" /> {l.speaker === "rep" ? "Comercial" : "Prospecto"}
                     {isObj && <Badge className="ml-1 bg-warn-soft text-warn">Objeción</Badge>}
-                    {l.tone && <Badge className="ml-1 bg-surface-2 text-muted">Tono: {l.tone}</Badge>}
+                    {l.tone && <Badge className={cn("ml-1", toneKind(l.tone) ? toneSoft[toneKind(l.tone)!] : "bg-surface-2 text-muted")}>Tono: {l.tone}</Badge>}
                   </p>
                   <p className="text-sm text-text">{l.text}</p>
                 </div>

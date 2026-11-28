@@ -232,7 +232,7 @@ const CONSUMER_PERSONALITY = [
   "Entusiasta, pero cuida mucho su dinero",
 ];
 
-export function generateRandomB2C(opts: { activities: string; gender?: Gender; seed: string }, base: Persona): Persona {
+export function generateRandomB2C(opts: { activities: string; gender?: Gender; seed: string; focus?: string; companyName?: string }, base: Persona): Persona {
   const r = rand(opts.seed);
   const gender = opts.gender ?? (r() < 0.5 ? "masculino" : "femenino");
   const p = choose(r, CONSUMER_PROFILES);
@@ -240,6 +240,14 @@ export function generateRandomB2C(opts: { activities: string; gender?: Gender; s
   const activities = opts.activities.trim().replace(/\.$/, "");
   const sector = detectSector(activities) ?? "Consumo";
   const who = gender === "masculino" ? p.who.m : p.who.f;
+  const o = gender === "masculino" ? "o" : "a";
+  const focus = opts.focus?.trim();
+  const situation = focus
+    ? `${age} años, ${who}. Vio ${focus.toLowerCase()} en la web${opts.companyName ? ` de ${opts.companyName}` : ""} y le interesa, pero aún no se decide: ${p.worry}.`
+    : `${age} años, ${who}. Está interesad${o} en lo que ofreces (${activities.slice(0, 140)}) y ${p.worry}.`;
+  const objections = focus
+    ? ["Está un poco caro para mí", `¿Qué incluye exactamente ${focus.toLowerCase()}? ¿Y si no me funciona?`, "Lo tengo que pensar / consultar en casa"]
+    : ["Está un poco caro para mí", "Lo tengo que pensar / consultar en casa", "¿Y si no me funciona?"];
   return {
     ...base,
     gender,
@@ -249,11 +257,11 @@ export function generateRandomB2C(opts: { activities: string; gender?: Gender; s
     sector,
     tags: [sector, "Aleatorio"],
     segment: "B2C",
-    situation: `${age} años, ${who}. Está interesad${gender === "masculino" ? "o" : "a"} en lo que ofreces (${activities.slice(0, 140)}) y ${p.worry}.`,
+    situation,
     description: `${age} años, ${who}.`,
     personality: choose(r, CONSUMER_PERSONALITY),
-    objections: ["Está un poco caro para mí", "Lo tengo que pensar / consultar en casa", "¿Y si no me funciona?"],
-    offer: activities,
+    objections,
+    offer: focus ?? activities,
     nameSource: "ficticio",
     realName: false,
   };
