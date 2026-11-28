@@ -5,7 +5,7 @@ import { detectGender, detectSector, generateRandomB2C, pickName } from "@/lib/p
 import { buyerFor, detectSize, objectionsFor, personalityFor, productsFrom, SIZE_LABEL } from "@/lib/sales-context";
 import type { Gender } from "@/lib/types";
 import { requireUser } from "@/lib/supabase/guard";
-import { scrapeSite, ScrapeError, type ScrapedSite } from "@/lib/web-scrape";
+import { isOfferingName, scrapeSite, ScrapeError, type ScrapedSite } from "@/lib/web-scrape";
 
 /**
  * POST /api/personas/from-web
@@ -59,7 +59,8 @@ function siteDigest(site: ScrapedSite) {
   const pages = site.pages
     .map((p) => [`URL: ${p.url}`, `Título: ${p.title}`, p.description && `Descripción: ${p.description}`, p.headings.length ? `Encabezados: ${p.headings.join(" · ")}` : "", `Texto: ${p.text}`].filter(Boolean).join("\n"))
     .join("\n\n---\n\n");
-  return `Menú y enlaces de la portada: ${site.navLabels.join(" · ")}\n\n${pages}`;
+  const found = site.offerings.map((o) => `${o.name}${o.price ? ` (${o.price})` : ""}`).join(" · ");
+  return `${found ? `Productos y servicios detectados en la web: ${found}\n\n` : ""}Menú y enlaces de la portada: ${site.navLabels.join(" · ")}\n\n${pages}`;
 }
 
 async function analyzeWithClaude(site: ScrapedSite, kind: "client" | "own", offer: string, seller: string, contactRole?: string, consumer?: boolean, seed?: string): Promise<AnalysisT | null> {
@@ -96,9 +97,11 @@ function analyzeWithRules(site: ScrapedSite, kind: "client" | "own", offer: stri
   const toB2C = audience.some((a) => /personas|particulares|para ti/i.test(a));
   const toB2B = audience.some((a) => !/personas|particulares|para ti|clientes/i.test(a));
   const customers = toB2C && toB2B ? "Particulares y empresas" : toB2C ? "Particulares" : toB2B ? "Empresas" : "Por confirmar";
-  const fromMenu = site.navLabels.filter((l) => !AUDIENCE.test(l) && !SLOGAN.test(l));
-  const fromHeadings = site.pages.flatMap((p) => p.headings).filter((h) => h.split(" ").length <= 4 && !SLOGAN.test(h));
-  const products = productsFrom([...fromMenu, ...fromHeadings], sector, all);
+  // 1) Productos y servicios concretos (datos estructurados, fichas, página de Servicios); 2) si no hay, menús y rubro.
+  const concrete = site.offerings.map((o) => (o.price ? `${o.name} (${o.price})` : o.name));
+  const fromMenu = site.navLabels.filter((l) => !AUDIENCE.test(l) && !SLOGAN.test(l) && isOfferingName(l));
+  const fromHeadings = site.pages.flatMap((p) => p.headings).filter((h) => h.split(" ").length <= 4 && !SLOGAN.test(h) && isOfferingName(h));
+  const products = concrete.length >= 2 ? { items: concrete.slice(0, 8), approx: false } : productsFrom([...concrete, ...fromMenu, ...fromHeadings], sector, all);
   const offering = products.items;
   const gender: Gender = site.host.length % 2 ? "masculino" : "femenino";
   const sizeText = SIZE_LABEL[size].toLowerCase();
