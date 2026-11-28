@@ -15,3 +15,4 @@ Plataforma SaaS de entrenamiento comercial con IA (análisis de llamadas + rolep
 - Agregaciones de métricas en `src/lib/analytics.ts`; modelo de datos en `src/lib/types.ts`.
 - Las partes simuladas llevan comentarios `En producción…`; la hoja de ruta para sustituirlas está en el README.
 - Usa la marca propia (nombre "Sparring IA" y el logo de `src/components/shell/logo.tsx`), no la de otros productos.
+- Novedades: cada cambio de funciones que vea el usuario se anota en `src/lib/changelog.ts` (entrada nueva al principio, con `id` nuevo, en lenguaje para el comercial). Así aparece la ventana de novedades al entrar.

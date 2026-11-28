@@ -9,6 +9,7 @@ import { Popover } from "@/components/ui";
 import { cn, timeAgo } from "@/lib/utils";
 import { DateRangePicker } from "./date-range";
 import { NAV_ITEMS } from "./sidebar";
+import { WhatsNew } from "./whats-new";
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -178,6 +179,7 @@ export function Topbar({ onMenu, showRange = true }: { onMenu: () => void; showR
       <div className="ml-auto flex items-center gap-1.5">
         {showRange && <DateRangePicker />}
         <ThemeToggle />
+        <WhatsNew />
         <Notifications />
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

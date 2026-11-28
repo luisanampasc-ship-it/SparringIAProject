@@ -2,6 +2,7 @@
 
 import { ChevronDown, Info, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn, scoreTone, toneBg, toneSoft, toneText } from "@/lib/utils";
 
 export function Card({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
@@ -194,7 +195,8 @@ export function Modal({ open, onClose, title, subtitle, children, footer, wide }
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Se dibuja en <body>: dentro de un contenedor con desenfoque (p. ej. la barra superior) quedaría recortado.
+  const modal = (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
         className={cn("max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-border bg-surface shadow-2xl", wide ? "max-w-3xl" : "max-w-md")}
@@ -214,6 +216,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, wide }
       </div>
     </div>
   );
+  return typeof document === "undefined" ? modal : createPortal(modal, document.body);
 }
 
 /** Popover simple anclado al trigger; se cierra al hacer clic fuera. */
